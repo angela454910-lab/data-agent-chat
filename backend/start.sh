@@ -9,5 +9,4 @@ if [ ! -d "../web/dist" ]; then
 fi
 
 echo "Starting Data Agent Chat on http://127.0.0.1:3009"
-cd ..
-uv run python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 3009 --reload
+uv run python -m uvicorn app.main:app --host 127.0.0.1 --port 3009 --reload

@@ -8,7 +8,7 @@ import type { ThinkingStep } from './types';
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { messages, loading, lastRoutedTo, sendMessage, clearMessages, loadMessages } = useChat();
+  const { messages, loading, sendMessage, clearMessages, loadMessages } = useChat();
   const {
     sessions,
     activeSession,
@@ -131,7 +131,6 @@ function App() {
       {/* Desktop Insight Panel */}
       <div className="hidden md:flex flex-shrink-0 h-full overflow-hidden">
         <InsightPanel
-          lastRoutedTo={lastRoutedTo}
           lastQuestion={lastQuestion}
           steps={steps}
           loading={loading}

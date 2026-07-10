@@ -10,7 +10,6 @@ function nextId() {
 export function useChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
-  const [lastRoutedTo, setLastRoutedTo] = useState<string>('');
 
   const sendMessage = useCallback(async (content: string) => {
     const userMsg: ChatMessage = {
@@ -45,14 +44,6 @@ export function useChat() {
           ),
         );
       },
-      onMetadata: (routedTo) => {
-        setLastRoutedTo(routedTo);
-        setMessages(prev =>
-          prev.map(m =>
-            m.id === agentMsgId ? { ...m, routedTo } : m,
-          ),
-        );
-      },
       onStep: (step: ThinkingStep) => {
         setMessages(prev =>
           prev.map(m =>
@@ -83,13 +74,11 @@ export function useChat() {
 
   const clearMessages = useCallback(() => {
     setMessages([]);
-    setLastRoutedTo('');
   }, []);
 
   const loadMessages = useCallback((msgs: ChatMessage[]) => {
     setMessages(msgs);
-    setLastRoutedTo('');
   }, []);
 
-  return { messages, loading, lastRoutedTo, sendMessage, clearMessages, loadMessages, setMessages };
+  return { messages, loading, sendMessage, clearMessages, loadMessages, setMessages };
 }

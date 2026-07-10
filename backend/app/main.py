@@ -51,7 +51,6 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     answer: str
-    routed_to: str
     question: str
 
 
@@ -80,11 +79,10 @@ async def schema():
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     if not request.message or not request.message.strip():
-        return {"answer": "请输入问题", "routed_to": "none", "question": ""}
+        return {"answer": "请输入问题", "question": ""}
     result = await invoke_supervisor(request.message.strip())
     return {
         "answer": result["answer"],
-        "routed_to": result["routed_to"],
         "question": request.message,
     }
 

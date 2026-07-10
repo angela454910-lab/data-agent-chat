@@ -8,6 +8,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 
 from app.agents.business_knowledge import business_knowledge_agent
 from app.agents.data_analysis import data_analysis_agent
+from app.llm import get_chat_model
 
 
 class AgentState(TypedDict):
@@ -16,75 +17,72 @@ class AgentState(TypedDict):
     next_agent: str
 
 
-def route_question(question: str) -> str:
-    """Route question to appropriate agent based on keywords."""
-    q = question.lower()
+ROUTING_PROMPT = """你是一个意图分类器。根据用户问题，判断应该由哪个 Agent 处理。
 
-    business_keywords = ["政策", "定义", "怎么计算", "什么是", "说明", "规则", "如何", "标准",
-                         "版本", "区别", "包含", "roi", "口径", "含义"]
+可选 Agent：
+- business_knowledge: 业务概念、指标定义、政策规则、口径说明、计算方式等知识类问题
+- data_analysis: 数据查询、统计分析、趋势对比、排名、具体数值等数据类问题
+- both: 同时涉及知识问答和数据分析的混合问题（例如"退款率怎么算？最近30天是多少？"）
 
-    data_keywords = ["多少", "排名", "统计", "分析", "趋势", "对比", "最近", "销售额",
-                     "订单量", "退款率", "转化率", "用户数", "地区", "渠道"]
+用户问题：{question}
 
-    business_score = sum(1 for kw in business_keywords if kw in q)
-    data_score = sum(1 for kw in data_keywords if kw in q)
+只输出 JSON，不要输出其他内容：
+{{"agent": "business_knowledge" | "data_analysis" | "both", "confidence": 0.0-1.0, "reason": "简要理由"}}"""
 
-    if business_score > data_score:
-        return "business_knowledge"
-    else:
+
+def classify_intent(question: str) -> str:
+    """Use LLM to classify user intent and determine routing."""
+    model = get_chat_model(temperature=0.0)
+    prompt = ROUTING_PROMPT.format(question=question)
+
+    try:
+        response = model.invoke([HumanMessage(content=prompt)])
+        content = response.content.strip()
+        if content.startswith("```"):
+            content = content.split("\n", 1)[-1]
+            content = content.rsplit("```", 1)[0].strip()
+        result = json.loads(content)
+        agent = result.get("agent", "data_analysis")
+        if agent not in ("business_knowledge", "data_analysis", "both"):
+            agent = "data_analysis"
+        return agent
+    except (json.JSONDecodeError, KeyError, Exception) as e:
+        print(f"[Supervisor] Intent classification failed: {e}, falling back to data_analysis")
         return "data_analysis"
 
 
 async def invoke_supervisor(message: str) -> dict:
     """Invoke the supervisor with a user message (non-streaming)."""
     if not message or not message.strip():
-        return {"answer": "请输入问题", "routed_to": "none"}
+        return {"answer": "请输入问题"}
 
-    agent_name = route_question(message)
+    agent_name = classify_intent(message)
 
-    initial_state = {
-        "messages": [HumanMessage(content=message)],
-        "next_agent": agent_name,
-    }
+    if agent_name == "both":
+        biz_state = {
+            "messages": [HumanMessage(content=message)],
+            "next_agent": "business_knowledge",
+        }
+        biz_result = business_knowledge_agent.invoke(biz_state)
+        biz_answer = ""
+        for m in reversed(biz_result.get("messages", [])):
+            if isinstance(m, AIMessage):
+                biz_answer = m.content
+                break
 
-    if agent_name == "data_analysis":
-        result = data_analysis_agent.invoke(initial_state)
-    else:
-        result = business_knowledge_agent.invoke(initial_state)
+        context_prefix = f"以下是相关的业务知识背景，请在分析时参考：\n{biz_answer}\n\n用户问题：{message}"
+        data_state = {
+            "messages": [HumanMessage(content=context_prefix)],
+            "next_agent": "data_analysis",
+        }
+        data_result = data_analysis_agent.invoke(data_state)
+        answer = ""
+        for m in reversed(data_result.get("messages", [])):
+            if isinstance(m, AIMessage):
+                answer = m.content
+                break
 
-    messages = result.get("messages", [])
-    ai_messages = [m for m in messages if isinstance(m, AIMessage)]
-
-    if ai_messages:
-        answer = ai_messages[-1].content
-    else:
-        answer = "无法回答这个问题"
-
-    return {
-        "answer": answer,
-        "routed_to": agent_name,
-    }
-
-
-async def stream_supervisor(message: str) -> AsyncGenerator[dict, None]:
-    """Stream supervisor events including thinking steps."""
-    if not message or not message.strip():
-        yield {"type": "answer", "content": "请输入问题"}
-        yield {"type": "metadata", "routed_to": "none"}
-        return
-
-    # Step 1: Routing decision
-    agent_name = route_question(message)
-    yield {
-        "type": "thinking",
-        "step": "routing",
-        "content": f"分析问题类型... 路由到 {'数据分析 Agent' if agent_name == 'data_analysis' else '业务知识 Agent'}"
-    }
-
-    yield {
-        "type": "metadata",
-        "routed_to": agent_name,
-    }
+        return {"answer": answer or "无法回答这个问题"}
 
     initial_state = {
         "messages": [HumanMessage(content=message)],
@@ -92,12 +90,94 @@ async def stream_supervisor(message: str) -> AsyncGenerator[dict, None]:
     }
 
     agent = data_analysis_agent if agent_name == "data_analysis" else business_knowledge_agent
+    result = agent.invoke(initial_state)
+
+    answer = ""
+    for m in reversed(result.get("messages", [])):
+        if isinstance(m, AIMessage):
+            answer = m.content
+            break
+
+    return {"answer": answer or "无法回答这个问题"}
+
+
+async def stream_supervisor(message: str) -> AsyncGenerator[dict, None]:
+    """Stream supervisor events including tool calls and results."""
+    if not message or not message.strip():
+        yield {"type": "answer", "content": "请输入问题"}
+        yield "data: [DONE]\n\n"
+        return
+
+    agent_name = classify_intent(message)
+
+    if agent_name == "both":
+        biz_state = {
+            "messages": [HumanMessage(content=message)],
+            "next_agent": "business_knowledge",
+        }
+        biz_answer = ""
+        try:
+            async for event in business_knowledge_agent.astream_events(biz_state, version="v2"):
+                kind = event.get("event", "")
+                if kind == "on_chat_model_stream":
+                    chunk = event.get("data", {}).get("chunk")
+                    if chunk and hasattr(chunk, "content") and chunk.content:
+                        yield {"type": "sub_answer", "content": chunk.content}
+                        biz_answer += chunk.content
+        except Exception as e:
+            yield {"type": "error", "content": f"业务知识处理出错: {str(e)}"}
+
+        context_prefix = f"以下是相关的业务知识背景，请在分析时参考：\n{biz_answer}\n\n用户问题：{message}"
+        data_state = {
+            "messages": [HumanMessage(content=context_prefix)],
+            "next_agent": "data_analysis",
+        }
+
+        try:
+            async for event in data_analysis_agent.astream_events(data_state, version="v2"):
+                kind = event.get("event", "")
+                if kind == "on_tool_start":
+                    tool_name = event.get("name", "unknown")
+                    tool_input = event.get("data", {}).get("input", {})
+                    yield {
+                        "type": "tool_call",
+                        "tool": tool_name,
+                        "input": json.dumps(tool_input, ensure_ascii=False, indent=2) if isinstance(tool_input, dict) else str(tool_input)
+                    }
+                elif kind == "on_tool_end":
+                    tool_name = event.get("name", "unknown")
+                    tool_output = event.get("data", {}).get("output", "")
+                    output_str = str(tool_output)
+                    if len(output_str) > 500:
+                        output_str = output_str[:500] + "..."
+                    yield {
+                        "type": "tool_result",
+                        "tool": tool_name,
+                        "output": output_str
+                    }
+
+            data_result = data_analysis_agent.invoke(data_state)
+            answer = ""
+            for m in reversed(data_result.get("messages", [])):
+                if isinstance(m, AIMessage):
+                    answer = m.content
+                    break
+            yield {"type": "answer", "content": answer or "无法回答"}
+
+        except Exception as e:
+            yield {"type": "error", "content": f"数据分析处理出错: {str(e)}"}
+        return
+
+    initial_state = {
+        "messages": [HumanMessage(content=message)],
+        "next_agent": agent_name,
+    }
+    agent = data_analysis_agent if agent_name == "data_analysis" else business_knowledge_agent
 
     try:
         async for event in agent.astream_events(initial_state, version="v2"):
             kind = event.get("event", "")
 
-            # Tool calls
             if kind == "on_tool_start":
                 tool_name = event.get("name", "unknown")
                 tool_input = event.get("data", {}).get("input", {})
@@ -107,7 +187,6 @@ async def stream_supervisor(message: str) -> AsyncGenerator[dict, None]:
                     "input": json.dumps(tool_input, ensure_ascii=False, indent=2) if isinstance(tool_input, dict) else str(tool_input)
                 }
 
-            # Tool results
             elif kind == "on_tool_end":
                 tool_name = event.get("name", "unknown")
                 tool_output = event.get("data", {}).get("output", "")
@@ -120,13 +199,14 @@ async def stream_supervisor(message: str) -> AsyncGenerator[dict, None]:
                     "output": output_str
                 }
 
-        # Get final answer
         result = agent.invoke(initial_state)
-        messages = result.get("messages", [])
-        ai_messages = [m for m in messages if isinstance(m, AIMessage)]
-        answer = ai_messages[-1].content if ai_messages else "无法回答"
+        answer = ""
+        for m in reversed(result.get("messages", [])):
+            if isinstance(m, AIMessage):
+                answer = m.content
+                break
 
-        yield {"type": "answer", "content": answer}
+        yield {"type": "answer", "content": answer or "无法回答"}
 
     except Exception as e:
         yield {"type": "error", "content": f"处理出错: {str(e)}"}

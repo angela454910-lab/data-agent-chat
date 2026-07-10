@@ -12,9 +12,7 @@ interface Props {
 function StepItem({ step }: { step: ThinkingStep }) {
   const [expanded, setExpanded] = useState(false);
 
-  const icon = step.type === 'thinking'
-    ? <Loader2 size={12} className="animate-spin text-blue-500" />
-    : step.type === 'tool_call'
+  const icon = step.type === 'tool_call'
     ? <Wrench size={12} className="text-amber-500" />
     : <CheckCircle2 size={12} className="text-green-500" />;
 
@@ -114,22 +112,6 @@ export function MessageBubble({ message }: Props) {
             <ReactMarkdown remarkPlugins={[remarkGfm]}>
               {message.content}
             </ReactMarkdown>
-          </div>
-        )}
-
-        {/* Route badge */}
-        {message.routedTo && !message.loading && (
-          <div className="mt-2 pt-2 border-t border-slate-200/50">
-            <span
-              className={clsx(
-                'inline-block text-xs px-2 py-0.5 rounded-full',
-                message.routedTo === 'data_analysis'
-                  ? 'bg-blue-100 text-blue-700'
-                  : 'bg-amber-100 text-amber-700',
-              )}
-            >
-              {message.routedTo === 'data_analysis' ? 'Data Analysis' : 'Business Knowledge'}
-            </span>
           </div>
         )}
       </div>

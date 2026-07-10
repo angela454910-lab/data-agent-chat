@@ -27,7 +27,6 @@ export async function sendChat(message: string): Promise<ChatResponse> {
 
 export interface StreamCallbacks {
   onChunk: (text: string) => void;
-  onMetadata: (routedTo: string) => void;
   onStep: (step: ThinkingStep) => void;
   onDone: () => void;
   onError: (err: string) => void;
@@ -77,18 +76,8 @@ export async function sendChatStream(
       try {
         const data = JSON.parse(payload);
 
-        if (data.type === 'answer') {
+        if (data.type === 'answer' || data.type === 'sub_answer') {
           callbacks.onChunk(data.content);
-        } else if (data.type === 'metadata') {
-          callbacks.onMetadata(data.routed_to);
-        } else if (data.type === 'thinking') {
-          callbacks.onStep({
-            id: `step-${++stepCounter}`,
-            type: 'thinking',
-            label: data.content,
-            detail: data.step,
-            timestamp: Date.now(),
-          });
         } else if (data.type === 'tool_call') {
           callbacks.onStep({
             id: `step-${++stepCounter}`,

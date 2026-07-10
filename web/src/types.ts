@@ -24,7 +24,6 @@ export interface ChatMessage {
   id: string;
   role: 'user' | 'agent';
   content: string;
-  routedTo?: string;
   timestamp: number;
   loading?: boolean;
   steps: ThinkingStep[];
@@ -32,7 +31,6 @@ export interface ChatMessage {
 
 export interface ChatResponse {
   answer: string;
-  routed_to: string;
   question: string;
 }
 

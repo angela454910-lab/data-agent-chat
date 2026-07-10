@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import { Bot, User, ChevronDown, ChevronRight, Wrench, CheckCircle2, Loader2 } from 'lucide-react';
 import type { ChatMessage, ThinkingStep } from '../types';
 import clsx from 'clsx';
+import { StepDetail } from './StepDetail';
 
 interface Props {
   message: ChatMessage;
@@ -32,9 +33,9 @@ function StepItem({ step }: { step: ThinkingStep }) {
         <span className="text-slate-600">{step.label}</span>
       </button>
       {expanded && step.detail && (
-        <pre className="mt-1 ml-5 p-2 bg-slate-50 rounded text-[10px] text-slate-500 overflow-x-auto whitespace-pre-wrap border border-slate-200">
-          {step.detail}
-        </pre>
+        <div className="mt-1 ml-5 p-2 bg-slate-50 rounded overflow-x-auto border border-slate-200">
+          <StepDetail detail={step.detail} />
+        </div>
       )}
     </div>
   );

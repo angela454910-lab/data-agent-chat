@@ -1,4 +1,5 @@
 import { Activity, HelpCircle, Wrench, CheckCircle2, Brain } from 'lucide-react';
+import { StepDetail } from './StepDetail';
 import type { ThinkingStep } from '../types';
 
 interface Props {
@@ -77,9 +78,9 @@ export function InsightPanel({ lastQuestion, steps, loading }: Props) {
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-medium text-slate-700">{step.label}</p>
                         {step.detail && (
-                          <pre className="mt-1 text-[10px] text-slate-500 whitespace-pre-wrap break-all bg-white p-1.5 rounded border border-slate-100 max-h-32 overflow-y-auto">
-                            {step.detail}
-                          </pre>
+                          <div className="mt-1 bg-white p-1.5 rounded border border-slate-100 max-h-32 overflow-y-auto">
+                            <StepDetail detail={step.detail} compact />
+                          </div>
                         )}
                       </div>
                       <span className="flex-shrink-0 text-[10px] text-slate-400">#{i + 1}</span>

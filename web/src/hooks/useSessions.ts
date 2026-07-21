@@ -28,11 +28,16 @@ function deriveTitle(messages: ChatMessage[]): string {
   return text.length > 20 ? text.slice(0, 20) + '...' : text;
 }
 
-export function useSessions() {
+export function useSessions(initialSessionId?: string | null) {
   const [sessions, setSessions] = useState<Session[]>(loadSessions);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(() => {
     const loaded = loadSessions();
-    return loaded.length > 0 ? loaded[0].id : null;
+    if (loaded.length === 0) return null;
+    // If a specific session id is provided (e.g. from URL), restore it
+    if (initialSessionId && loaded.some(s => s.id === initialSessionId)) {
+      return initialSessionId;
+    }
+    return loaded[0].id;
   });
   const initialized = useRef(false);
 
@@ -99,16 +104,18 @@ export function useSessions() {
 
   const updateSessionMessages = useCallback((id: string, messages: ChatMessage[]) => {
     setSessions(prev =>
-      prev.map(s =>
-        s.id === id
-          ? {
-              ...s,
-              messages,
-              title: deriveTitle(messages),
-              updatedAt: Date.now(),
-            }
-          : s,
-      ),
+      prev.map(s => {
+        if (s.id !== id) return s;
+        // Skip if messages are the same reference (e.g. loaded from session switch).
+        // Only bump updatedAt when messages actually changed (user sent a message).
+        if (s.messages === messages) return s;
+        return {
+          ...s,
+          messages,
+          title: deriveTitle(messages),
+          updatedAt: Date.now(),
+        };
+      }),
     );
   }, []);
 

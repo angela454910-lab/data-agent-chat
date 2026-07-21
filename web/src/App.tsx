@@ -6,9 +6,37 @@ import { useChat } from './hooks/useChat';
 import { useSessions } from './hooks/useSessions';
 import type { ThinkingStep } from './types';
 
+const SESSION_PATH_PREFIX = '/session-';
+
+function getSessionFromURL(): string | null {
+  const path = window.location.pathname;
+  // Match /session-{timestamp}-{random}
+  if (path.startsWith(SESSION_PATH_PREFIX)) {
+    const id = path.slice(1); // remove leading /
+    return id || null;
+  }
+  return null;
+}
+
+function updateURLSession(sessionId: string | null) {
+  const url = new URL(window.location.href);
+  if (sessionId) {
+    url.pathname = `/${sessionId}`;
+  } else {
+    url.pathname = '/';
+  }
+  // Clear any leftover query params from previous URL format
+  url.search = '';
+  window.history.replaceState(null, '', url.toString());
+}
+
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { messages, loading, sendMessage, clearMessages, loadMessages } = useChat();
+
+  // Read the initial session from the URL so refresh restores the right session
+  const urlSessionId = getSessionFromURL();
+
   const {
     sessions,
     activeSession,
@@ -17,7 +45,7 @@ function App() {
     deleteSession,
     switchSession,
     updateSessionMessages,
-  } = useSessions();
+  } = useSessions(urlSessionId);
 
   // Track previous activeSessionId to detect switches
   const prevSessionIdRef = useRef<string | null>(null);
@@ -29,6 +57,23 @@ function App() {
       loadMessages(activeSession.messages);
     }
   }, [activeSessionId, activeSession, loadMessages]);
+
+  // Sync activeSessionId to the URL so refresh keeps the current session
+  useEffect(() => {
+    updateURLSession(activeSessionId);
+  }, [activeSessionId]);
+
+  // Listen for browser back/forward to switch sessions via URL change
+  useEffect(() => {
+    const onPopState = () => {
+      const id = getSessionFromURL();
+      if (id && id !== activeSessionId) {
+        switchSession(id);
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [activeSessionId, switchSession]);
 
   // Save messages to active session when they change
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

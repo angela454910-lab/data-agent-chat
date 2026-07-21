@@ -17,17 +17,22 @@ class AgentState(TypedDict):
     next_agent: str
 
 
-ROUTING_PROMPT = """你是一个意图分类器。根据用户问题，判断应该由哪个 Agent 处理。
+ROUTING_PROMPT = """你是一个意图分类器。根据用户问题，判断应该由哪个 Agent 处理，或是否应该拒绝回答。
 
 可选 Agent：
-- business_knowledge: 业务概念、指标定义、政策规则、口径说明、计算方式等知识类问题
+- business_knowledge: 业务概念、指标定义、政策规则、口径说明、计算方式等知识类问题，也包含问候语（如"你好"）、感谢、系统能力询问（如"你能做什么"）等对话类问题
 - data_analysis: 数据查询、统计分析、趋势对比、排名、具体数值等数据类问题
 - both: 同时涉及知识问答和数据分析的混合问题（例如"退款率怎么算？最近30天是多少？"）
+- out_of_scope: 与数据分析或业务指标完全无关的问题，或需要外部常识/网络搜索才能回答的问题（例如天气、写诗、讲笑话、AI术语解释、历史事件、体育赛事、明星八卦等）。注意：问候语、感谢、系统能力询问不属于 out_of_scope
 
 用户问题：{question}
 
 只输出 JSON，不要输出其他内容：
-{{"agent": "business_knowledge" | "data_analysis" | "both", "confidence": 0.0-1.0, "reason": "简要理由"}}"""
+{{"agent": "business_knowledge" | "data_analysis" | "both" | "out_of_scope", "confidence": 0.0-1.0, "reason": "简要理由"}}"""
+
+# 拒绝消息模板 — 当意图分类为 out_of_scope 时返回
+# TODO: 后续可考虑使用本地算法（如 embedding 相似度、关键词预过滤）在 LLM 分类前快速拦截明显无关问题，进一步减少 token 消耗
+OUT_OF_SCOPE_MESSAGE = "请提出与数据分析或业务指标相关的问题，比如「最近30天销售额是多少？」或「退款率怎么计算？」"
 
 # Prevent agents from looping indefinitely on open-ended questions
 AGENT_CONFIG = {"recursion_limit": 50}
@@ -46,7 +51,7 @@ def classify_intent(question: str) -> str:
             content = content.rsplit("```", 1)[0].strip()
         result = json.loads(content)
         agent = result.get("agent", "data_analysis")
-        if agent not in ("business_knowledge", "data_analysis", "both"):
+        if agent not in ("business_knowledge", "data_analysis", "both", "out_of_scope"):
             agent = "data_analysis"
         return agent
     except (json.JSONDecodeError, KeyError, Exception) as e:
@@ -91,6 +96,9 @@ async def invoke_supervisor(message: str) -> dict:
 
     agent_name = classify_intent(message)
 
+    if agent_name == "out_of_scope":
+        return {"answer": OUT_OF_SCOPE_MESSAGE}
+
     try:
         if agent_name == "both":
             biz_state = {
@@ -130,6 +138,10 @@ async def stream_supervisor(message: str) -> AsyncGenerator[dict, None]:
         return
 
     agent_name = classify_intent(message)
+
+    if agent_name == "out_of_scope":
+        yield {"type": "answer", "content": OUT_OF_SCOPE_MESSAGE}
+        return
 
     if agent_name == "both":
         biz_state = {

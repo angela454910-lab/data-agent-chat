@@ -1,4 +1,4 @@
-import { Plus, MessageSquare, Trash2, MessageSquareQuote } from 'lucide-react';
+import { Plus, MessageSquare, Trash2, Sparkles } from 'lucide-react';
 import type { Session } from '../types';
 import clsx from 'clsx';
 
@@ -8,15 +8,7 @@ interface Props {
   onNewSession: () => void;
   onDeleteSession: (id: string) => void;
   onSwitchSession: (id: string) => void;
-  onPresetClick: (question: string) => void;
 }
-
-const PRESETS = [
-  '最近30天销售额是多少，哪个渠道贡献最大？',
-  '各地区订单量排名如何？',
-  '退款率怎么样？',
-  '新用户转化率如何？',
-];
 
 export function Sidebar({
   sessions,
@@ -24,28 +16,36 @@ export function Sidebar({
   onNewSession,
   onDeleteSession,
   onSwitchSession,
-  onPresetClick,
 }: Props) {
+  const activeSessions = sessions.filter(s => s.messages.length > 0);
+
   return (
     <aside className="w-72 bg-white border-r border-slate-200 flex flex-col h-full overflow-hidden">
       {/* Brand */}
-      <div className="px-5 py-4 border-b border-slate-200 flex-shrink-0">
+      <div className="px-5 py-5 border-b border-slate-100 flex-shrink-0">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-blue-500 flex items-center justify-center">
-            <span className="text-white font-bold text-sm">D</span>
+          <div className="relative">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/25">
+              <Sparkles size={18} className="text-white" />
+            </div>
+            <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-green-400 rounded-full border-2 border-white" />
           </div>
           <div>
-            <h1 className="text-sm font-semibold text-slate-800">Data Agent</h1>
-            <p className="text-xs text-slate-500">LangChain + LangGraph</p>
+            <h1 className="text-sm font-semibold text-slate-800 tracking-tight">Data Agent</h1>
+            <p className="text-xs text-slate-400">AI-Powered Analytics</p>
           </div>
         </div>
       </div>
 
       {/* New Chat Button */}
-      <div className="px-4 pt-4 pb-2 flex-shrink-0">
+      <div className="px-4 pt-4 pb-3 flex-shrink-0">
         <button
           onClick={onNewSession}
-          className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-lg bg-blue-500 text-white text-sm font-medium hover:bg-blue-600 transition-colors"
+          className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-xl
+                     bg-gradient-to-r from-blue-600 to-blue-500 text-white text-sm font-medium
+                     hover:from-blue-500 hover:to-blue-400
+                     shadow-lg shadow-blue-500/20 hover:shadow-blue-500/35
+                     transition-all duration-200 active:scale-[0.98]"
         >
           <Plus size={16} />
           <span>新对话</span>
@@ -53,75 +53,75 @@ export function Sidebar({
       </div>
 
       {/* Session History */}
-      <div className="flex-1 overflow-y-auto min-h-0 px-3 py-2">
+      <div className="flex-1 overflow-y-auto min-h-0 px-3 py-2 sidebar-scrollbar">
         <div className="flex items-center gap-2 px-2 mb-2">
           <MessageSquare size={14} className="text-slate-400" />
-          <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+          <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
             历史记录
           </h3>
         </div>
         <div className="space-y-0.5">
-          {sessions.filter(s => s.messages.length > 0).map(session => (
-            <div
-              key={session.id}
-              className={clsx(
-                'group flex items-center gap-2 px-3 py-2.5 rounded-lg cursor-pointer transition-colors',
-                session.id === activeSessionId
-                  ? 'bg-blue-50 text-blue-700'
-                  : 'hover:bg-slate-50 text-slate-700',
-              )}
-              onClick={() => onSwitchSession(session.id)}
-            >
-              <MessageSquare
-                size={14}
+          {activeSessions.map((session) => {
+            const isActive = session.id === activeSessionId;
+            return (
+              <div
+                key={session.id}
                 className={clsx(
-                  'flex-shrink-0',
-                  session.id === activeSessionId ? 'text-blue-500' : 'text-slate-400',
+                  'group flex items-center gap-2.5 px-3 py-2.5 rounded-xl cursor-pointer',
+                  'transition-all duration-200',
+                  isActive
+                    ? 'bg-blue-50 text-blue-700 shadow-sm border border-blue-100/80'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800',
                 )}
-              />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm truncate">{session.title}</p>
-              </div>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDeleteSession(session.id);
-                }}
-                className={clsx(
-                  'flex-shrink-0 p-1 rounded transition-colors',
-                  'opacity-0 group-hover:opacity-100',
-                  'hover:bg-red-50 hover:text-red-500 text-slate-400',
-                )}
-                title="删除对话"
+                onClick={() => onSwitchSession(session.id)}
               >
-                <Trash2 size={13} />
-              </button>
+                <MessageSquare
+                  size={14}
+                  className={clsx(
+                    'flex-shrink-0 transition-colors duration-200',
+                    isActive ? 'text-blue-500' : 'text-slate-400 group-hover:text-slate-500',
+                  )}
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm truncate font-medium">{session.title}</p>
+                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteSession(session.id);
+                  }}
+                  className={clsx(
+                    'flex-shrink-0 p-1 rounded-lg transition-all duration-200',
+                    'opacity-0 group-hover:opacity-100',
+                    isActive
+                      ? 'hover:bg-red-100 hover:text-red-500 text-blue-400'
+                      : 'hover:bg-red-50 hover:text-red-400 text-slate-300',
+                    'active:scale-90',
+                  )}
+                  title="删除对话"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            );
+          })}
+          {activeSessions.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center mb-3">
+                <MessageSquare size={20} className="text-slate-300" />
+              </div>
+              <p className="text-xs text-slate-400">暂无历史记录</p>
+              <p className="text-[10px] text-slate-400 mt-1">开始新对话，探索数据</p>
             </div>
-          ))}
-          {sessions.filter(s => s.messages.length > 0).length === 0 && (
-            <p className="text-xs text-slate-400 text-center py-4">暂无历史记录</p>
           )}
         </div>
       </div>
 
-      {/* Presets */}
-      <div className="flex-shrink-0 border-t border-slate-200 px-4 py-3">
-        <div className="flex items-center gap-2 mb-2">
-          <MessageSquareQuote size={14} className="text-slate-400" />
-          <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-            示例问题
-          </h3>
-        </div>
-        <div className="space-y-1">
-          {PRESETS.map((q, i) => (
-            <button
-              key={i}
-              onClick={() => onPresetClick(q)}
-              className="block w-full text-left text-xs text-slate-500 px-2 py-1.5 rounded hover:bg-blue-50 hover:text-blue-700 transition-colors truncate"
-            >
-              {q}
-            </button>
-          ))}
+      {/* Footer */}
+      <div className="px-4 py-3 border-t border-slate-100 flex-shrink-0">
+        <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-slate-50">
+          <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+          <span className="text-xs text-slate-400">Service Ready</span>
         </div>
       </div>
     </aside>

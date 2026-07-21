@@ -5,6 +5,7 @@ import { InsightPanel } from './components/InsightPanel';
 import { useChat } from './hooks/useChat';
 import { useSessions } from './hooks/useSessions';
 import type { ThinkingStep } from './types';
+import { PanelRightOpen, PanelRightClose } from 'lucide-react';
 
 const SESSION_PATH_PREFIX = '/session-';
 
@@ -32,6 +33,7 @@ function updateURLSession(sessionId: string | null) {
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [insightOpen, setInsightOpen] = useState(false);
   const { messages, loading, sendMessage, clearMessages, loadMessages } = useChat();
 
   // Read the initial session from the URL so refresh restores the right session
@@ -99,11 +101,6 @@ function App() {
 
   const steps: ThinkingStep[] = lastAgentMessage?.steps || [];
 
-  const handlePresetClick = (question: string) => {
-    sendMessage(question);
-    setSidebarOpen(false);
-  };
-
   const handleNewSession = () => {
     createSession();
     clearMessages();
@@ -121,15 +118,8 @@ function App() {
     setSidebarOpen(false);
   };
 
-  const handleClear = () => {
-    clearMessages();
-    if (activeSessionId) {
-      updateSessionMessages(activeSessionId, []);
-    }
-  };
-
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50">
+    <div className="flex h-screen overflow-hidden bg-white">
       {/* Desktop Sidebar */}
       <div className="hidden md:flex flex-shrink-0 h-full overflow-hidden">
         <Sidebar
@@ -138,7 +128,6 @@ function App() {
           onNewSession={handleNewSession}
           onDeleteSession={handleDeleteSession}
           onSwitchSession={handleSwitchSession}
-          onPresetClick={handlePresetClick}
         />
       </div>
 
@@ -156,7 +145,6 @@ function App() {
               onNewSession={handleNewSession}
               onDeleteSession={handleDeleteSession}
               onSwitchSession={handleSwitchSession}
-              onPresetClick={handlePresetClick}
             />
           </div>
         </div>
@@ -168,19 +156,34 @@ function App() {
           messages={messages}
           loading={loading}
           onSend={sendMessage}
-          onClear={handleClear}
           onMenuClick={() => setSidebarOpen(true)}
         />
       </main>
 
-      {/* Desktop Insight Panel */}
-      <div className="hidden md:flex flex-shrink-0 h-full overflow-hidden">
-        <InsightPanel
-          lastQuestion={lastQuestion}
-          steps={steps}
-          loading={loading}
-        />
+      {/* Insight Panel Toggle Button */}
+      <div className="hidden md:flex items-center">
+        <button
+          onClick={() => setInsightOpen(!insightOpen)}
+          className="flex-shrink-0 flex items-center justify-center w-6 h-20 rounded-l-lg bg-slate-100 hover:bg-slate-200 border border-r-0 border-slate-200 text-slate-500 hover:text-slate-700 transition-colors"
+          title={insightOpen ? 'Close panel' : 'Open panel'}
+        >
+          {insightOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
+        </button>
       </div>
+
+      {/* Desktop Insight Panel */}
+      {insightOpen && (
+        <div className="hidden md:flex flex-shrink-0 h-full overflow-hidden insight-panel-enter">
+          <InsightPanel
+            lastQuestion={lastQuestion}
+            steps={steps}
+            loading={loading}
+            messages={messages}
+            isOpen={insightOpen}
+            onToggle={() => setInsightOpen(false)}
+          />
+        </div>
+      )}
     </div>
   );
 }

@@ -1,42 +1,58 @@
-import { Activity, HelpCircle, Wrench, CheckCircle2, Brain } from 'lucide-react';
-import { StepDetail } from './StepDetail';
-import type { ThinkingStep } from '../types';
+import { X, BarChart3, Hash, Clock, Database } from 'lucide-react';
+import type { ThinkingStep, ChatMessage } from '../types';
 
 interface Props {
   lastQuestion: string;
   steps: ThinkingStep[];
   loading: boolean;
+  messages: ChatMessage[];
+  isOpen: boolean;
+  onToggle: () => void;
 }
 
-function StepIcon({ type }: { type: ThinkingStep['type'] }) {
-  if (type === 'tool_call') return <Wrench size={14} className="text-amber-500" />;
-  return <CheckCircle2 size={14} className="text-green-500" />;
-}
+export function InsightPanel({ lastQuestion, steps, loading, messages, onToggle }: Props) {
+  const totalMessages = messages.length;
 
-export function InsightPanel({ lastQuestion, steps, loading }: Props) {
+  // Extract tool names from steps
+  const toolNames = [...new Set(
+    steps
+      .filter(s => s.type === 'tool_call')
+      .map(s => {
+        const match = s.label.match(/调用工具:\s*(.+)/);
+        return match ? match[1] : s.label;
+      })
+  )];
+
   const hasData = lastQuestion || steps.length > 0;
 
   return (
-    <aside className="w-80 bg-white border-l border-slate-200 flex flex-col overflow-hidden">
+    <aside className="w-72 bg-white border-l border-slate-200 flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="px-5 py-4 border-b border-slate-200 flex-shrink-0">
+      <div className="px-4 py-3 border-b border-slate-200 flex-shrink-0 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Activity size={16} className="text-blue-500" />
-          <h2 className="text-sm font-semibold text-slate-800">Analysis Process</h2>
+          <BarChart3 size={16} className="text-blue-500" />
+          <h2 className="text-sm font-semibold text-slate-800">分析详情</h2>
           {loading && (
-            <span className="ml-auto text-xs text-blue-500 animate-pulse">Running...</span>
+            <span className="text-xs text-blue-500 animate-pulse">Running...</span>
           )}
         </div>
+        <button
+          onClick={onToggle}
+          className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+          title="关闭面板"
+        >
+          <X size={16} />
+        </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-5 py-4 min-h-0">
+      <div className="flex-1 overflow-y-auto px-4 py-4 min-h-0">
         {!hasData ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center mb-3">
-              <Activity size={20} className="text-slate-400" />
+              <BarChart3 size={20} className="text-slate-400" />
             </div>
             <p className="text-sm text-slate-500">
-              The analysis process will be displayed here after asking a question
+              提问后，分析详情将在此显示
             </p>
           </div>
         ) : (
@@ -44,52 +60,81 @@ export function InsightPanel({ lastQuestion, steps, loading }: Props) {
             {/* Question */}
             {lastQuestion && (
               <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <HelpCircle size={14} className="text-slate-400" />
-                  <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                    Question
-                  </h3>
-                </div>
+                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+                  当前问题
+                </h3>
                 <p className="text-sm text-slate-700 bg-slate-50 rounded-lg p-3 border border-slate-200">
                   {lastQuestion}
                 </p>
               </div>
             )}
 
-            {/* Thinking Steps */}
+            {/* Stats */}
+            <div>
+              <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+                会话统计
+              </h3>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-slate-50 rounded-lg p-2.5 border border-slate-200">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Hash size={12} className="text-slate-400" />
+                    <span className="text-[10px] text-slate-500 uppercase">消息</span>
+                  </div>
+                  <p className="text-lg font-semibold text-slate-800">{totalMessages}</p>
+                </div>
+                <div className="bg-slate-50 rounded-lg p-2.5 border border-slate-200">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Clock size={12} className="text-slate-400" />
+                    <span className="text-[10px] text-slate-500 uppercase">步骤</span>
+                  </div>
+                  <p className="text-lg font-semibold text-slate-800">{steps.length}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Tools Used */}
+            {toolNames.length > 0 && (
+              <div>
+                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+                  调用工具
+                </h3>
+                <div className="flex flex-wrap gap-1.5">
+                  {toolNames.map(name => (
+                    <span
+                      key={name}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-blue-50 text-blue-700 text-xs border border-blue-100"
+                    >
+                      <Database size={10} />
+                      {name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Step Summary */}
             {steps.length > 0 && (
               <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <Brain size={14} className="text-slate-400" />
-                  <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                    Thinking Chain
-                  </h3>
-                  <span className="text-xs text-slate-400">({steps.length})</span>
-                </div>
+                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+                  步骤概览
+                </h3>
                 <div className="space-y-1">
                   {steps.map((step, i) => (
                     <div
                       key={step.id}
-                      className="flex items-start gap-2 p-2 rounded-lg bg-slate-50 border border-slate-200"
+                      className="flex items-center gap-2 px-2.5 py-1.5 rounded text-xs bg-slate-50 border border-slate-100"
                     >
-                      <div className="flex-shrink-0 mt-0.5">
-                        <StepIcon type={step.type} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-slate-700">{step.label}</p>
-                        {step.detail && (
-                          <div className="mt-1 bg-white p-1.5 rounded border border-slate-100 max-h-32 overflow-y-auto">
-                            <StepDetail detail={step.detail} compact />
-                          </div>
-                        )}
-                      </div>
-                      <span className="flex-shrink-0 text-[10px] text-slate-400">#{i + 1}</span>
+                      <span className="text-[10px] text-slate-400 w-4">{i + 1}</span>
+                      <span className="flex-1 text-slate-600 truncate">{step.label}</span>
+                      <span className={step.type === 'tool_call' ? 'text-amber-500' : 'text-green-500'}>
+                        {step.type === 'tool_call' ? '🔧' : '✓'}
+                      </span>
                     </div>
                   ))}
                   {loading && (
-                    <div className="flex items-center gap-2 p-2 text-blue-500">
-                      <div className="w-3.5 h-3.5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                      <span className="text-xs">Processing...</span>
+                    <div className="flex items-center gap-2 px-2.5 py-1.5 text-blue-500 text-xs">
+                      <div className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                      <span>Processing...</span>
                     </div>
                   )}
                 </div>

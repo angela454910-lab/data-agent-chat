@@ -16,6 +16,44 @@ from app.schema.catalog import SCHEMA_CATALOG, get_schema_summary
 from app.tools.mock_data import TABLES, get_table, list_table_names
 
 
+def _apply_filters(df: pd.DataFrame, filters: dict[str, Any] | None) -> pd.DataFrame:
+    """Apply filters to a DataFrame with support for scalar, list, and range values.
+
+    - Scalar: exact match (==)
+    - List: membership (isin)
+    - Dict with keys gte/gt/lte/lt: range comparison (for numeric/date columns)
+
+    Returns filtered DataFrame.
+    """
+    if not filters:
+        return df
+
+    result = df.copy()
+    for col, val in filters.items():
+        if col not in result.columns:
+            continue
+
+        if isinstance(val, dict):
+            # Range filter: {"gte": 100, "lte": 500} or {"gte": "2026-06-21"}
+            for op, threshold in val.items():
+                if op == "gte":
+                    result = result[result[col] >= threshold]
+                elif op == "gt":
+                    result = result[result[col] > threshold]
+                elif op == "lte":
+                    result = result[result[col] <= threshold]
+                elif op == "lt":
+                    result = result[result[col] < threshold]
+        elif isinstance(val, list):
+            # Membership filter: value in list
+            result = result[result[col].isin(val)]
+        else:
+            # Exact match (scalar)
+            result = result[result[col] == val]
+
+    return result
+
+
 @tool
 def list_tables() -> str:
     """列出所有可用的数据表名称。"""
@@ -42,25 +80,23 @@ def describe_table(table_name: str) -> str:
 
 @tool
 def query_data(table_name: str, columns: list[str] | None = None, filters: dict[str, Any] | None = None, limit: int = 100) -> str:
-    """查询数据表，支持简单的过滤和列选择。
+    """查询数据表，支持精确匹配、列表过滤和范围过滤。
 
     Args:
         table_name: 表名
         columns: 要返回的列名列表，None 表示全部
-        filters: 过滤条件，如 {"region": "华东", "refunded": False}
+        filters: 过滤条件，支持三种格式：
+            - 精确匹配: {"region": "华东"}
+            - 列表匹配: {"channel_id": ["c_web", "c_app"]}
+            - 范围过滤: {"order_date": {"gte": "2026-06-21", "lte": "2026-07-21"}}
+            (gte=大于等于, gt=大于, lte=小于等于, lt=小于)
         limit: 返回行数上限
     """
     df = get_table(table_name)
     if df is None:
         return json.dumps({"error": f"表 {table_name} 不存在"}, ensure_ascii=False)
 
-    result = df.copy()
-
-    # Apply filters
-    if filters:
-        for col, val in filters.items():
-            if col in result.columns:
-                result = result[result[col] == val]
+    result = _apply_filters(df, filters)
 
     # Select columns
     if columns:
@@ -76,25 +112,24 @@ def query_data(table_name: str, columns: list[str] | None = None, filters: dict[
 
 @tool
 def aggregate_data(table_name: str, group_by: str, agg_col: str, agg_func: str = "sum", filters: dict[str, Any] | None = None) -> str:
-    """对数据进行分组聚合。
+    """对数据进行分组聚合，支持精确匹配、列表过滤和范围过滤。
 
     Args:
         table_name: 表名
         group_by: 分组列名
         agg_col: 聚合列名
         agg_func: 聚合函数，支持 sum, mean, count, max, min
-        filters: 过滤条件
+        filters: 过滤条件，支持三种格式：
+            - 精确匹配: {"region": "华东"}
+            - 列表匹配: {"channel_id": ["c_web", "c_app"]}
+            - 范围过滤: {"order_date": {"gte": "2026-06-21", "lte": "2026-07-21"}}
+            使用范围过滤可实现"最近30天"等时间范围查询
     """
     df = get_table(table_name)
     if df is None:
         return json.dumps({"error": f"表 {table_name} 不存在"}, ensure_ascii=False)
 
-    result = df.copy()
-
-    if filters:
-        for col, val in filters.items():
-            if col in result.columns:
-                result = result[result[col] == val]
+    result = _apply_filters(df, filters)
 
     if group_by not in result.columns or agg_col not in result.columns:
         return json.dumps({"error": "列名不存在"}, ensure_ascii=False)
@@ -106,13 +141,14 @@ def aggregate_data(table_name: str, group_by: str, agg_col: str, agg_func: str =
     else:
         return json.dumps({"error": f"不支持的聚合函数: {agg_func}"}, ensure_ascii=False)
 
-    grouped = grouped.sort_values(agg_col if agg_func != "count" else "count", ascending=False)
+    sort_col = agg_col if agg_func != "count" else "count"
+    grouped = grouped.sort_values(sort_col, ascending=False)
     return grouped.to_json(orient="records", force_ascii=False, indent=2)
 
 
 @tool
 def join_and_query(left_table: str, right_table: str, left_key: str, right_key: str, columns: list[str] | None = None, filters: dict[str, Any] | None = None, limit: int = 100) -> str:
-    """关联两张表并查询。
+    """关联两张表并查询，支持精确匹配、列表过滤和范围过滤。
 
     Args:
         left_table: 左表名
@@ -120,7 +156,10 @@ def join_and_query(left_table: str, right_table: str, left_key: str, right_key: 
         left_key: 左表关联键
         right_key: 右表关联键
         columns: 要返回的列名列表
-        filters: 过滤条件
+        filters: 过滤条件，支持三种格式：
+            - 精确匹配: {"region": "华东"}
+            - 列表匹配: {"channel_id": ["c_web", "c_app"]}
+            - 范围过滤: {"order_date": {"gte": "2026-06-21", "lte": "2026-07-21"}}
         limit: 返回行数上限
     """
     left_df = get_table(left_table)
@@ -131,10 +170,7 @@ def join_and_query(left_table: str, right_table: str, left_key: str, right_key: 
 
     merged = left_df.merge(right_df, left_on=left_key, right_on=right_key, suffixes=(f"_{left_table}", f"_{right_table}"))
 
-    if filters:
-        for col, val in filters.items():
-            if col in merged.columns:
-                merged = merged[merged[col] == val]
+    merged = _apply_filters(merged, filters)
 
     if columns:
         valid_cols = [c for c in columns if c in merged.columns]

@@ -6,7 +6,11 @@ const STORAGE_KEY = 'data-agent-sessions';
 function loadSessions(): Session[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const sessions: Session[] = JSON.parse(raw);
+      // Only restore sessions that have messages
+      return sessions.filter(s => s.messages.length > 0);
+    }
   } catch {
     // ignore
   }
@@ -14,7 +18,9 @@ function loadSessions(): Session[] {
 }
 
 function saveSessions(sessions: Session[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+  // Only persist sessions that have messages
+  const nonEmpty = sessions.filter(s => s.messages.length > 0);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(nonEmpty));
 }
 
 function generateId() {
@@ -50,8 +56,6 @@ export function useSessions(initialSessionId?: string | null) {
           id: generateId(),
           title: '新对话',
           messages: [],
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
         };
         setSessions([newSession]);
         setActiveSessionId(newSession.id);
@@ -73,8 +77,6 @@ export function useSessions(initialSessionId?: string | null) {
       id: generateId(),
       title: '新对话',
       messages: [],
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
     };
     setSessions(prev => [newSession, ...prev]);
     setActiveSessionId(newSession.id);
@@ -88,10 +90,10 @@ export function useSessions(initialSessionId?: string | null) {
     });
     setActiveSessionId(prev => {
       if (prev !== id) return prev;
-      // Switch to the most recent remaining session, or create one
+      // Switch to the first remaining session, or create one
       const remaining = sessions.filter(s => s.id !== id);
       if (remaining.length > 0) {
-        return remaining.sort((a, b) => b.updatedAt - a.updatedAt)[0].id;
+        return remaining[0].id;
       }
       // Will trigger creation in effect
       return null;
@@ -107,13 +109,11 @@ export function useSessions(initialSessionId?: string | null) {
       prev.map(s => {
         if (s.id !== id) return s;
         // Skip if messages are the same reference (e.g. loaded from session switch).
-        // Only bump updatedAt when messages actually changed (user sent a message).
         if (s.messages === messages) return s;
         return {
           ...s,
           messages,
           title: deriveTitle(messages),
-          updatedAt: Date.now(),
         };
       }),
     );
@@ -126,8 +126,6 @@ export function useSessions(initialSessionId?: string | null) {
         id: generateId(),
         title: '新对话',
         messages: [],
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
       };
       setSessions([newSession]);
       setActiveSessionId(newSession.id);

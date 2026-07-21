@@ -18,20 +18,6 @@ const PRESETS = [
   '新用户转化率如何？',
 ];
 
-function formatTime(ts: number): string {
-  const now = Date.now();
-  const diff = now - ts;
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return '刚刚';
-  if (mins < 60) return `${mins}分钟前`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}小时前`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}天前`;
-  const date = new Date(ts);
-  return `${date.getMonth() + 1}/${date.getDate()}`;
-}
-
 export function Sidebar({
   sessions,
   activeSessionId,
@@ -40,8 +26,6 @@ export function Sidebar({
   onSwitchSession,
   onPresetClick,
 }: Props) {
-  const sorted = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);
-
   return (
     <aside className="w-72 bg-white border-r border-slate-200 flex flex-col h-full overflow-hidden">
       {/* Brand */}
@@ -77,7 +61,7 @@ export function Sidebar({
           </h3>
         </div>
         <div className="space-y-0.5">
-          {sorted.map(session => (
+          {sessions.filter(s => s.messages.length > 0).map(session => (
             <div
               key={session.id}
               className={clsx(
@@ -97,9 +81,6 @@ export function Sidebar({
               />
               <div className="flex-1 min-w-0">
                 <p className="text-sm truncate">{session.title}</p>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  {formatTime(session.updatedAt)}
-                </p>
               </div>
               <button
                 onClick={(e) => {
@@ -117,7 +98,7 @@ export function Sidebar({
               </button>
             </div>
           ))}
-          {sorted.length === 0 && (
+          {sessions.filter(s => s.messages.length > 0).length === 0 && (
             <p className="text-xs text-slate-400 text-center py-4">暂无历史记录</p>
           )}
         </div>

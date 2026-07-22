@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { TrendingUp, BarChart3, PieChart, MapPin, Users, ShoppingCart } from 'lucide-react';
 
 interface Props {
@@ -50,15 +51,24 @@ const STARTERS = [
 ];
 
 export function StarterCards({ onQuestionClick }: Props) {
-  return (
-    <div className="flex flex-col items-center justify-center h-full px-4 py-8">
-      <div className="text-center mb-8">
-        <h2 className="text-xl font-semibold text-slate-800 mb-2">开始探索数据</h2>
-        <p className="text-sm text-slate-500">
-          选择一个问题开始，或直接在下方输入你的数据查询
-        </p>
-      </div>
+  const [visible, setVisible] = useState(false);
 
+  useEffect(() => {
+    const t = setTimeout(() => setVisible(true), 100);
+    return () => clearTimeout(t);
+  }, []);
+
+  return (
+    <div className="flex flex-col items-center px-4 py-8">
+      {/* Title */}
+      <div className="text-center mb-6">
+        <h2 className="text-xl font-semibold text-slate-800 mb-2">
+          <mark className="ann ann-nw ann-blue" data-note="挑一个试试 →">
+            开始探索数据
+          </mark>
+        </h2>
+      </div>
+      {/* Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-w-3xl w-full">
         {STARTERS.map((item, i) => {
           const Icon = item.icon;
@@ -67,6 +77,11 @@ export function StarterCards({ onQuestionClick }: Props) {
               key={i}
               onClick={() => onQuestionClick(item.title)}
               className="starter-card flex flex-col items-start gap-2.5 p-4 rounded-xl border border-slate-200 bg-white text-left hover:border-slate-300"
+              style={{
+                opacity: visible ? 1 : 0,
+                transform: visible ? 'translateY(0)' : 'translateY(8px)',
+                transition: `all 0.35s ${0.1 + i * 0.06}s cubic-bezier(0.16, 1, 0.3, 1)`,
+              }}
             >
               <div className={`w-8 h-8 rounded-lg ${item.bg} flex items-center justify-center`}>
                 <Icon size={16} className={item.color} />

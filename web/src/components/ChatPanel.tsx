@@ -14,9 +14,20 @@ interface Props {
 export function ChatPanel({ messages, loading, onSend, onMenuClick }: Props) {
   const [input, setInput] = useState('');
   const [isFocused, setIsFocused] = useState(false);
+  const [inputMoved, setInputMoved] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+
+  const isEmptyConversation = messages.length === 0;
+  const isWelcome = isEmptyConversation && !inputMoved;
+
+  // Reset inputMoved when messages become empty (new session)
+  useEffect(() => {
+    if (isEmptyConversation) {
+      setInputMoved(false);
+    }
+  }, [isEmptyConversation]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -26,6 +37,7 @@ export function ChatPanel({ messages, loading, onSend, onMenuClick }: Props) {
     e.preventDefault();
     const trimmed = input.trim();
     if (!trimmed || loading) return;
+    setInputMoved(true);
     onSend(trimmed);
     setInput('');
     textareaRef.current?.focus();
@@ -40,6 +52,15 @@ export function ChatPanel({ messages, loading, onSend, onMenuClick }: Props) {
 
   return (
     <div className="flex flex-col h-full bg-gradient-to-b from-white to-slate-50/50 min-h-0 relative">
+      {/* Animated top spacer — pushes content to center when welcome, collapses when sending */}
+      <div
+        className="flex-shrink-0 overflow-hidden"
+        style={{
+          height: isWelcome ? '22vh' : '0px',
+          transition: 'height 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
+        }}
+      />
+
       {/* Mobile hamburger — floating */}
       {onMenuClick && (
         <button
@@ -54,16 +75,28 @@ export function ChatPanel({ messages, loading, onSend, onMenuClick }: Props) {
       {/* Messages */}
       <div
         ref={messagesContainerRef}
-        className="flex-1 overflow-y-auto px-4 md:px-6 py-4 min-h-0"
+        className={`overflow-y-auto px-4 md:px-6 py-4 min-h-0 ${!isEmptyConversation ? 'flex-1' : ''}`}
       >
-        {messages.length === 0 ? (
-          <StarterCards onQuestionClick={onSend} />
+        {isEmptyConversation ? (
+          <div
+            style={{
+              opacity: isWelcome ? 1 : 0,
+              transform: isWelcome ? 'translateY(0)' : 'translateY(-12px)',
+              pointerEvents: isWelcome ? 'auto' : 'none',
+              transition: 'opacity 0.3s ease, transform 0.3s ease',
+            }}
+          >
+            <StarterCards onQuestionClick={(q) => {
+              setInputMoved(true);
+              onSend(q);
+            }} />
+          </div>
         ) : (
           <div className="max-w-3xl mx-auto">
             {messages.map((msg, i) => (
               <div
                 key={msg.id}
-                className={msg.role === 'user' ? 'message-bubble-user' : 'message-bubble-agent'}
+                className={msg.role === 'user' ? 'message-bubble-user' : ''}
                 style={{ animationDelay: `${i * 50}ms` }}
               >
                 <MessageBubble message={msg} />
@@ -75,8 +108,16 @@ export function ChatPanel({ messages, loading, onSend, onMenuClick }: Props) {
       </div>
 
       {/* Composer — floating with glass effect */}
-      <div className="flex-shrink-0 px-4 md:px-6 pb-4 pt-2">
+      <div
+        className="flex-shrink-0 px-4 md:px-6 pb-4 pt-2"
+        style={{ transition: 'all 0.5s cubic-bezier(0.16, 1, 0.3, 1)' }}
+      >
         <div className="max-w-3xl mx-auto">
+          {isEmptyConversation && (
+            <p className="ann ann-se ann-blue ann-no-mark text-xs text-slate-400 mb-1" data-note="或输入你想问的问题">
+              &nbsp;
+            </p>
+          )}
           <form
             onSubmit={handleSubmit}
             className={[

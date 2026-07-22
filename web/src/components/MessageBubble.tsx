@@ -33,7 +33,7 @@ function StepItem({ step }: { step: ThinkingStep }) {
         <span className="text-slate-500 truncate">{step.label}</span>
       </button>
       {expanded && step.detail && (
-        <div className="mt-1 ml-4 p-2 bg-slate-50 rounded-lg overflow-x-auto border border-slate-200">
+        <div className="mt-1 ml-4 p-2 bg-slate-50 rounded-lg overflow-x-auto border border-slate-200 step-expand-enter">
           <StepDetail detail={step.detail} />
         </div>
       )}
@@ -45,7 +45,6 @@ export function MessageBubble({ message }: Props) {
   const isUser = message.role === 'user';
   const hasSteps = !isUser && message.steps.length > 0;
 
-  // User message: compact rounded bubble
   if (isUser) {
     return (
       <div className="flex justify-end mb-4">
@@ -61,25 +60,39 @@ export function MessageBubble({ message }: Props) {
     );
   }
 
-  // Agent message: flat, inline content
   return (
     <div className="mb-6">
-      {/* Agent header */}
+      {/* Agent header — bot avatar with annotation */}
       <div className="flex items-center gap-2 mb-2">
-        <div className="flex-shrink-0 w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center">
-          <Bot size={13} className="text-slate-500" />
-        </div>
-        <span className="text-xs font-medium text-slate-500">Data Agent</span>
+        <span className="ann ann-e ann-blue ann-no-mark" data-note="AI 助手" style={{ display: 'inline-flex' }}>
+          <div className="flex-shrink-0 w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center">
+            <Bot size={13} className="text-slate-500" />
+          </div>
+        </span>
         {message.loading && message.steps.length === 0 && (
           <Loader2 size={12} className="animate-spin text-slate-400 ml-1" />
         )}
       </div>
 
-      {/* Thinking chain — always visible, minimal */}
+      {/* Thinking chain — annotation style */}
       {hasSteps && (
         <div className="mb-3 ml-0">
-          <div className="flex items-center gap-1.5 mb-1">
-            <span className="text-[10px] text-slate-400 uppercase tracking-wide">思考过程</span>
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <span
+              className="font-['Shantell_Sans',cursive] text-xs text-slate-400"
+              style={{ transform: 'rotate(-1.5deg)', display: 'inline-block' }}
+            >
+              思考过程
+            </span>
+            <svg width="48" height="6" viewBox="0 0 48 6" className="flex-shrink-0">
+              <path
+                d="M1 4 C8 1 14 5 20 3 C26 1 32 5 38 3 C42 1.5 45 4 47 3"
+                fill="none"
+                stroke="#cbd5e1"
+                strokeWidth="1.2"
+                strokeLinecap="round"
+              />
+            </svg>
             {message.loading && (
               <Loader2 size={10} className="animate-spin text-slate-400" />
             )}
@@ -104,7 +117,7 @@ export function MessageBubble({ message }: Props) {
         </div>
       )}
 
-      {/* Content — flat, no bubble */}
+      {/* Content */}
       {message.content && (
         <div className="ml-0 pl-0">
           <div className="markdown-content text-sm text-slate-700">

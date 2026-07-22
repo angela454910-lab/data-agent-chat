@@ -39,7 +39,6 @@ export function useSessions(initialSessionId?: string | null) {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(() => {
     const loaded = loadSessions();
     if (loaded.length === 0) return null;
-    // If a specific session id is provided (e.g. from URL), restore it
     if (initialSessionId && loaded.some(s => s.id === initialSessionId)) {
       return initialSessionId;
     }
@@ -47,20 +46,9 @@ export function useSessions(initialSessionId?: string | null) {
   });
   const initialized = useRef(false);
 
-  // Create initial session if none exist
+  // Mark as initialized after first render
   useEffect(() => {
-    if (!initialized.current) {
-      initialized.current = true;
-      if (sessions.length === 0) {
-        const newSession: Session = {
-          id: generateId(),
-          title: '新对话',
-          messages: [],
-        };
-        setSessions([newSession]);
-        setActiveSessionId(newSession.id);
-      }
-    }
+    initialized.current = true;
   }, []);
 
   // Persist to localStorage
@@ -84,21 +72,13 @@ export function useSessions(initialSessionId?: string | null) {
   }, []);
 
   const deleteSession = useCallback((id: string) => {
-    setSessions(prev => {
-      const next = prev.filter(s => s.id !== id);
-      return next;
-    });
+    setSessions(prev => prev.filter(s => s.id !== id));
     setActiveSessionId(prev => {
       if (prev !== id) return prev;
-      // Switch to the first remaining session, or create one
-      const remaining = sessions.filter(s => s.id !== id);
-      if (remaining.length > 0) {
-        return remaining[0].id;
-      }
-      // Will trigger creation in effect
+      // Switch to first remaining, or null (no auto-create)
       return null;
     });
-  }, [sessions]);
+  }, []);
 
   const switchSession = useCallback((id: string) => {
     setActiveSessionId(id);
@@ -108,7 +88,6 @@ export function useSessions(initialSessionId?: string | null) {
     setSessions(prev =>
       prev.map(s => {
         if (s.id !== id) return s;
-        // Skip if messages are the same reference (e.g. loaded from session switch).
         if (s.messages === messages) return s;
         return {
           ...s,
@@ -118,19 +97,6 @@ export function useSessions(initialSessionId?: string | null) {
       }),
     );
   }, []);
-
-  // If activeSessionId is null (all deleted), create a new one
-  useEffect(() => {
-    if (activeSessionId === null && initialized.current) {
-      const newSession: Session = {
-        id: generateId(),
-        title: '新对话',
-        messages: [],
-      };
-      setSessions([newSession]);
-      setActiveSessionId(newSession.id);
-    }
-  }, [activeSessionId]);
 
   return {
     sessions,

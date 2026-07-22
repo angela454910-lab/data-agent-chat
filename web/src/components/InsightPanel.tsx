@@ -10,10 +10,39 @@ interface Props {
   onToggle: () => void;
 }
 
+/* Hand-drawn squiggly underline for section titles */
+function Squiggle({ color = '#cbd5e1' }: { color?: string }) {
+  return (
+    <svg width="100%" height="5" viewBox="0 0 60 5" className="block">
+      <path
+        d="M1 3 C6 1 12 5 18 3 C24 1 30 5 36 3 C42 1 48 5 54 3 C57 2 59 3.5 59 3"
+        fill="none"
+        stroke={color}
+        strokeWidth="1.2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+/* Hand-drawn section heading */
+function SectionHeading({ children, color = '#94a3b8' }: { children: string; color?: string }) {
+  return (
+    <div className="mb-2.5">
+      <h3
+        className="font-['Shantell_Sans',cursive] text-sm text-slate-500 inline-block"
+        style={{ transform: 'rotate(-1deg)' }}
+      >
+        {children}
+      </h3>
+      <Squiggle color={color} />
+    </div>
+  );
+}
+
 export function InsightPanel({ lastQuestion, steps, loading, messages, onToggle }: Props) {
   const totalMessages = messages.length;
 
-  // Extract tool names from steps
   const toolNames = [...new Set(
     steps
       .filter(s => s.type === 'tool_call')
@@ -60,9 +89,7 @@ export function InsightPanel({ lastQuestion, steps, loading, messages, onToggle 
             {/* Question */}
             {lastQuestion && (
               <div>
-                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
-                  当前问题
-                </h3>
+                <SectionHeading color="#93c5fd">当前问题</SectionHeading>
                 <p className="text-sm text-slate-700 bg-slate-50 rounded-lg p-3 border border-slate-200">
                   {lastQuestion}
                 </p>
@@ -71,9 +98,7 @@ export function InsightPanel({ lastQuestion, steps, loading, messages, onToggle 
 
             {/* Stats */}
             <div>
-              <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
-                会话统计
-              </h3>
+              <SectionHeading color="#94a3b8">会话统计</SectionHeading>
               <div className="grid grid-cols-2 gap-2">
                 <div className="bg-slate-50 rounded-lg p-2.5 border border-slate-200">
                   <div className="flex items-center gap-1.5 mb-1">
@@ -95,9 +120,7 @@ export function InsightPanel({ lastQuestion, steps, loading, messages, onToggle 
             {/* Tools Used */}
             {toolNames.length > 0 && (
               <div>
-                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
-                  调用工具
-                </h3>
+                <SectionHeading color="#fcd34d">调用工具</SectionHeading>
                 <div className="flex flex-wrap gap-1.5">
                   {toolNames.map(name => (
                     <span
@@ -115,9 +138,7 @@ export function InsightPanel({ lastQuestion, steps, loading, messages, onToggle 
             {/* Step Summary */}
             {steps.length > 0 && (
               <div>
-                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
-                  步骤概览
-                </h3>
+                <SectionHeading color="#86efac">步骤概览</SectionHeading>
                 <div className="space-y-1">
                   {steps.map((step, i) => (
                     <div

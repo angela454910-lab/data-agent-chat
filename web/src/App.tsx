@@ -11,9 +11,8 @@ const SESSION_PATH_PREFIX = '/session-';
 
 function getSessionFromURL(): string | null {
   const path = window.location.pathname;
-  // Match /session-{timestamp}-{random}
   if (path.startsWith(SESSION_PATH_PREFIX)) {
-    const id = path.slice(1); // remove leading /
+    const id = path.slice(1);
     return id || null;
   }
   return null;
@@ -26,7 +25,6 @@ function updateURLSession(sessionId: string | null) {
   } else {
     url.pathname = '/';
   }
-  // Clear any leftover query params from previous URL format
   url.search = '';
   window.history.replaceState(null, '', url.toString());
 }
@@ -36,7 +34,6 @@ function App() {
   const [insightOpen, setInsightOpen] = useState(false);
   const { messages, loading, sendMessage, clearMessages, loadMessages } = useChat();
 
-  // Read the initial session from the URL so refresh restores the right session
   const urlSessionId = getSessionFromURL();
 
   const {
@@ -49,7 +46,6 @@ function App() {
     updateSessionMessages,
   } = useSessions(urlSessionId);
 
-  // Track previous activeSessionId to detect switches
   const prevSessionIdRef = useRef<string | null>(null);
 
   // Load messages when switching sessions
@@ -57,31 +53,37 @@ function App() {
     if (activeSession && activeSessionId !== prevSessionIdRef.current) {
       prevSessionIdRef.current = activeSessionId;
       loadMessages(activeSession.messages);
+    } else if (!activeSession && activeSessionId !== prevSessionIdRef.current) {
+      // No active session - clear messages for welcome screen
+      prevSessionIdRef.current = activeSessionId;
+      clearMessages();
     }
-  }, [activeSessionId, activeSession, loadMessages]);
+  }, [activeSessionId, activeSession, loadMessages, clearMessages]);
 
-  // Sync activeSessionId to the URL so refresh keeps the current session
+  // Sync activeSessionId to URL
   useEffect(() => {
     updateURLSession(activeSessionId);
   }, [activeSessionId]);
 
-  // Listen for browser back/forward to switch sessions via URL change
+  // Listen for browser back/forward
   useEffect(() => {
     const onPopState = () => {
       const id = getSessionFromURL();
       if (id && id !== activeSessionId) {
         switchSession(id);
+      } else if (!id && activeSessionId) {
+        // Navigated to root - show welcome screen
+        clearMessages();
       }
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [activeSessionId, switchSession]);
+  }, [activeSessionId, switchSession, clearMessages]);
 
   // Save messages to active session when they change
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!activeSessionId) return;
-    // Debounce saves to avoid thrashing localStorage during streaming
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
       updateSessionMessages(activeSessionId, messages);
@@ -102,15 +104,24 @@ function App() {
   const steps: ThinkingStep[] = lastAgentMessage?.steps || [];
 
   const handleNewSession = () => {
-    createSession();
     clearMessages();
     setSidebarOpen(false);
   };
 
+  const handleSendMessage = (message: string) => {
+    // Create session on first message if none exists
+    if (!activeSessionId) {
+      const newId = createSession();
+      setTimeout(() => {
+        sendMessage(message);
+      }, 0);
+    } else {
+      sendMessage(message);
+    }
+  };
+
   const handleDeleteSession = (id: string) => {
     deleteSession(id);
-    // If deleting the active session, the hook will auto-switch.
-    // The effect above will load the new active session's messages.
   };
 
   const handleSwitchSession = (id: string) => {
@@ -155,7 +166,7 @@ function App() {
         <ChatPanel
           messages={messages}
           loading={loading}
-          onSend={sendMessage}
+          onSend={handleSendMessage}
           onMenuClick={() => setSidebarOpen(true)}
         />
       </main>

@@ -116,14 +116,6 @@ export function Sidebar({
           )}
         </div>
       </div>
-
-      {/* Footer */}
-      <div className="px-4 py-3 border-t border-slate-100 flex-shrink-0">
-        <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-slate-50">
-          <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-          <span className="text-xs text-slate-400">Service Ready</span>
-        </div>
-      </div>
     </aside>
   );
 }

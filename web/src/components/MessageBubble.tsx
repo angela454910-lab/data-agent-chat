@@ -8,6 +8,7 @@ import { StepDetail } from './StepDetail';
 
 interface Props {
   message: ChatMessage;
+  sessionStatus?: 'done' | 'error';
 }
 
 function StepItem({ step }: { step: ThinkingStep }) {
@@ -41,7 +42,7 @@ function StepItem({ step }: { step: ThinkingStep }) {
   );
 }
 
-export function MessageBubble({ message }: Props) {
+export function MessageBubble({ message, sessionStatus }: Props) {
   const isUser = message.role === 'user';
   const hasSteps = !isUser && message.steps.length > 0;
 
@@ -71,6 +72,12 @@ export function MessageBubble({ message }: Props) {
         </span>
         {message.loading && message.steps.length === 0 && (
           <Loader2 size={12} className="animate-spin text-slate-400 ml-1" />
+        )}
+        {sessionStatus === 'done' && (
+          <span className="w-2.5 h-2.5 rounded-full bg-green-500 ml-1" />
+        )}
+        {sessionStatus === 'error' && (
+          <span className="w-2.5 h-2.5 rounded-full bg-red-500 ml-1" />
         )}
       </div>
 

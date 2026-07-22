@@ -44,4 +44,5 @@ export interface Session {
   id: string;
   title: string;
   messages: ChatMessage[];
+  status?: 'thinking' | 'done' | 'error';
 }

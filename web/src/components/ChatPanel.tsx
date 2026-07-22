@@ -9,9 +9,10 @@ interface Props {
   loading: boolean;
   onSend: (message: string) => void;
   onMenuClick?: () => void;
+  sessionStatus?: 'done' | 'error';
 }
 
-export function ChatPanel({ messages, loading, onSend, onMenuClick }: Props) {
+export function ChatPanel({ messages, loading, onSend, onMenuClick, sessionStatus }: Props) {
   const [input, setInput] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const [inputMoved, setInputMoved] = useState(false);
@@ -21,6 +22,14 @@ export function ChatPanel({ messages, loading, onSend, onMenuClick }: Props) {
 
   const isEmptyConversation = messages.length === 0;
   const isWelcome = isEmptyConversation && !inputMoved;
+
+  // Find the index of the last agent message
+  const lastAgentIndex = (() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'agent') return i;
+    }
+    return -1;
+  })();
 
   // Reset inputMoved when messages become empty (new session)
   useEffect(() => {
@@ -99,7 +108,10 @@ export function ChatPanel({ messages, loading, onSend, onMenuClick }: Props) {
                 className={msg.role === 'user' ? 'message-bubble-user' : ''}
                 style={{ animationDelay: `${i * 50}ms` }}
               >
-                <MessageBubble message={msg} />
+                <MessageBubble
+                  message={msg}
+                  sessionStatus={i === lastAgentIndex ? sessionStatus : undefined}
+                />
               </div>
             ))}
             <div ref={messagesEndRef} />

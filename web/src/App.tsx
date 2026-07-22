@@ -4,7 +4,7 @@ import { ChatPanel } from './components/ChatPanel';
 import { InsightPanel } from './components/InsightPanel';
 import { useChat } from './hooks/useChat';
 import { useSessions } from './hooks/useSessions';
-import type { ThinkingStep } from './types';
+import type { ThinkingStep, ChatMessage } from './types';
 import { PanelRightOpen, PanelRightClose } from 'lucide-react';
 
 const SESSION_PATH_PREFIX = '/session-';
@@ -32,7 +32,6 @@ function updateURLSession(sessionId: string | null) {
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [insightOpen, setInsightOpen] = useState(false);
-  const { messages, loading, sendMessage, clearMessages, loadMessages } = useChat();
 
   const urlSessionId = getSessionFromURL();
 
@@ -43,22 +42,63 @@ function App() {
     createSession,
     deleteSession,
     switchSession,
+    clearActiveSession,
     updateSessionMessages,
+    updateSessionStatus,
+    clearSessionStatus,
   } = useSessions(urlSessionId);
 
+  const activeSessionIdRef = useRef<string | null>(activeSessionId);
+  activeSessionIdRef.current = activeSessionId;
+
   const prevSessionIdRef = useRef<string | null>(null);
+  const thinkingSessionIdRef = useRef<string | null>(null);
+
+  const {
+    messages,
+    loading,
+    sendMessage,
+    clearMessages,
+    loadMessages,
+    setLoading,
+  } = useChat({
+    activeSessionIdRef,
+    onThinkingStart: (sessionId: string) => {
+      thinkingSessionIdRef.current = sessionId;
+      updateSessionStatus(sessionId, 'thinking');
+    },
+    onThinkingEnd: (sessionId: string, status: 'done' | 'error') => {
+      updateSessionStatus(sessionId, status);
+      thinkingSessionIdRef.current = null;
+    },
+    onPersistMessages: (sessionId: string, msgs: ChatMessage[]) => {
+      // Persist streaming messages directly to the session,
+      // even when the user is viewing a different session
+      updateSessionMessages(sessionId, msgs);
+    },
+  });
 
   // Load messages when switching sessions
   useEffect(() => {
     if (activeSession && activeSessionId !== prevSessionIdRef.current) {
       prevSessionIdRef.current = activeSessionId;
       loadMessages(activeSession.messages);
+      // Restore loading state if the session is still thinking
+      if (activeSession.status === 'thinking') {
+        setLoading(true);
+      } else {
+        setLoading(false);
+      }
+      // Clear done/error dot on switch — "mark as read"
+      if (activeSession.status === 'done' || activeSession.status === 'error') {
+        clearSessionStatus(activeSessionId);
+      }
     } else if (!activeSession && activeSessionId !== prevSessionIdRef.current) {
       // No active session - clear messages for welcome screen
       prevSessionIdRef.current = activeSessionId;
       clearMessages();
     }
-  }, [activeSessionId, activeSession, loadMessages, clearMessages]);
+  }, [activeSessionId, activeSession, loadMessages, clearMessages, setLoading, clearSessionStatus]);
 
   // Sync activeSessionId to URL
   useEffect(() => {
@@ -103,7 +143,13 @@ function App() {
 
   const steps: ThinkingStep[] = lastAgentMessage?.steps || [];
 
+  const sessionStatus =
+    activeSession?.status === 'done' || activeSession?.status === 'error'
+      ? activeSession.status
+      : undefined;
+
   const handleNewSession = () => {
+    clearActiveSession();
     clearMessages();
     setSidebarOpen(false);
   };
@@ -113,10 +159,10 @@ function App() {
     if (!activeSessionId) {
       const newId = createSession();
       setTimeout(() => {
-        sendMessage(message);
+        sendMessage(message, newId);
       }, 0);
     } else {
-      sendMessage(message);
+      sendMessage(message, activeSessionId);
     }
   };
 
@@ -168,6 +214,7 @@ function App() {
           loading={loading}
           onSend={handleSendMessage}
           onMenuClick={() => setSidebarOpen(true)}
+          sessionStatus={sessionStatus}
         />
       </main>
 

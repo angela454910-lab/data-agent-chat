@@ -84,6 +84,10 @@ export function useSessions(initialSessionId?: string | null) {
     setActiveSessionId(id);
   }, []);
 
+  const clearActiveSession = useCallback(() => {
+    setActiveSessionId(null);
+  }, []);
+
   const updateSessionMessages = useCallback((id: string, messages: ChatMessage[]) => {
     setSessions(prev =>
       prev.map(s => {
@@ -98,6 +102,21 @@ export function useSessions(initialSessionId?: string | null) {
     );
   }, []);
 
+  const updateSessionStatus = useCallback(
+    (id: string, status: 'thinking' | 'done' | 'error') => {
+      setSessions(prev =>
+        prev.map(s => (s.id === id ? { ...s, status } : s)),
+      );
+    },
+    [],
+  );
+
+  const clearSessionStatus = useCallback((id: string) => {
+    setSessions(prev =>
+      prev.map(s => (s.id === id ? { ...s, status: undefined } : s)),
+    );
+  }, []);
+
   return {
     sessions,
     activeSession,
@@ -105,6 +124,9 @@ export function useSessions(initialSessionId?: string | null) {
     createSession,
     deleteSession,
     switchSession,
+    clearActiveSession,
     updateSessionMessages,
+    updateSessionStatus,
+    clearSessionStatus,
   };
 }

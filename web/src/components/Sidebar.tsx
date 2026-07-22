@@ -1,4 +1,4 @@
-import { Plus, MessageSquare, Trash2, Sparkles } from 'lucide-react';
+import { Plus, MessageSquare, Trash2, Sparkles, Loader2 } from 'lucide-react';
 import type { Session } from '../types';
 import clsx from 'clsx';
 
@@ -85,6 +85,16 @@ export function Sidebar({
                 <div className="flex-1 min-w-0">
                   <p className="text-sm truncate font-medium">{session.title}</p>
                 </div>
+                {/* Status indicator */}
+                {session.status === 'thinking' && (
+                  <Loader2 size={14} className="flex-shrink-0 animate-spin text-blue-500" />
+                )}
+                {session.status === 'done' && (
+                  <span className="flex-shrink-0 w-2.5 h-2.5 rounded-full bg-green-500" />
+                )}
+                {session.status === 'error' && (
+                  <span className="flex-shrink-0 w-2.5 h-2.5 rounded-full bg-red-500" />
+                )}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();

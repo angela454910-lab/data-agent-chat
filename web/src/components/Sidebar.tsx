@@ -1,9 +1,9 @@
 import { Plus, MessageSquare, Trash2, Sparkles, Loader2 } from 'lucide-react';
-import type { Session } from '../types';
+import type { SessionSummary } from '../types';
 import clsx from 'clsx';
 
 interface Props {
-  sessions: Session[];
+  sessions: SessionSummary[];
   activeSessionId: string | null;
   onNewSession: () => void;
   onDeleteSession: (id: string) => void;
@@ -17,7 +17,7 @@ export function Sidebar({
   onDeleteSession,
   onSwitchSession,
 }: Props) {
-  const activeSessions = sessions.filter(s => s.messages.length > 0);
+  const activeSessions = sessions.filter(s => s.message_count > 0);
 
   return (
     <aside className="w-72 bg-white border-r border-slate-200 flex flex-col h-full overflow-hidden">

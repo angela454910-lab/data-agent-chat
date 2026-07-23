@@ -10,7 +10,7 @@ function nextId() {
 interface UseChatOptions {
   onThinkingStart?: (sessionId: string) => void;
   onThinkingEnd?: (sessionId: string, status: 'done' | 'error') => void;
-  onPersistMessages?: (sessionId: string, messages: ChatMessage[]) => void;
+  onStreamComplete?: (sessionId: string) => void;
   activeSessionIdRef: React.MutableRefObject<string | null>;
 }
 
@@ -23,7 +23,7 @@ interface StreamState {
 export function useChat({
   onThinkingStart,
   onThinkingEnd,
-  onPersistMessages,
+  onStreamComplete,
   activeSessionIdRef,
 }: UseChatOptions) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -36,8 +36,8 @@ export function useChat({
   onThinkingStartRef.current = onThinkingStart;
   const onThinkingEndRef = useRef(onThinkingEnd);
   onThinkingEndRef.current = onThinkingEnd;
-  const onPersistMessagesRef = useRef(onPersistMessages);
-  onPersistMessagesRef.current = onPersistMessages;
+  const onStreamCompleteRef = useRef(onStreamComplete);
+  onStreamCompleteRef.current = onStreamComplete;
 
   const activeStreamsRef = useRef<Map<string, StreamState>>(new Map());
 
@@ -92,9 +92,8 @@ export function useChat({
     }
 
     onThinkingStartRef.current?.(sid);
-    onPersistMessagesRef.current?.(sid, fullMessages);
 
-    await sendChatStream(content, {
+    await sendChatStream(content, sid, {
       onChunk: (chunk) => {
         const stream = activeStreamsRef.current.get(sid);
         if (!stream) return;
@@ -102,7 +101,6 @@ export function useChat({
         stream.messages = stream.messages.map(m =>
           m.id === agentMsgId ? { ...m, content: stream.accumulated, loading: false } : m,
         );
-        onPersistMessagesRef.current?.(sid, stream.messages);
         syncActiveSession(sid, stream.messages);
       },
       onStep: (step: ThinkingStep) => {
@@ -111,7 +109,6 @@ export function useChat({
         stream.messages = stream.messages.map(m =>
           m.id === agentMsgId ? { ...m, steps: [...m.steps, step] } : m,
         );
-        onPersistMessagesRef.current?.(sid, stream.messages);
         syncActiveSession(sid, stream.messages);
       },
       onDone: () => {
@@ -120,7 +117,6 @@ export function useChat({
           stream.messages = stream.messages.map(m =>
             m.id === agentMsgId ? { ...m, loading: false } : m,
           );
-          onPersistMessagesRef.current?.(sid, stream.messages);
           if (sid === activeSessionIdRef.current) {
             setMessages(stream.messages);
             setLoading(false);
@@ -128,6 +124,7 @@ export function useChat({
           activeStreamsRef.current.delete(sid);
         }
         onThinkingEndRef.current?.(sid, 'done');
+        onStreamCompleteRef.current?.(sid);
       },
       onError: (err) => {
         const stream = activeStreamsRef.current.get(sid);
@@ -135,7 +132,6 @@ export function useChat({
           stream.messages = stream.messages.map(m =>
             m.id === agentMsgId ? { ...m, content: `Error: ${err}`, loading: false } : m,
           );
-          onPersistMessagesRef.current?.(sid, stream.messages);
           if (sid === activeSessionIdRef.current) {
             setMessages(stream.messages);
             setLoading(false);

@@ -4,7 +4,8 @@ import { ChatPanel } from './components/ChatPanel';
 import { InsightPanel } from './components/InsightPanel';
 import { useChat } from './hooks/useChat';
 import { useSessions } from './hooks/useSessions';
-import type { ThinkingStep, ChatMessage } from './types';
+import { fetchSession } from './lib/api';
+import type { Session } from './types';
 import { PanelRightOpen, PanelRightClose } from 'lucide-react';
 
 const SESSION_PATH_PREFIX = '/session-';
@@ -43,15 +44,19 @@ function App() {
     deleteSession,
     switchSession,
     clearActiveSession,
-    updateSessionMessages,
     updateSessionStatus,
     clearSessionStatus,
+    updateSessionTitle,
+    refreshSessions,
   } = useSessions(urlSessionId);
 
   const activeSessionIdRef = useRef<string | null>(activeSessionId);
   activeSessionIdRef.current = activeSessionId;
 
   const prevSessionIdRef = useRef<string | null>(null);
+
+  // Local session mirror — updated after stream for immediate metadata display
+  const [localSession, setLocalSession] = useState<Session | null>(null);
 
   const {
     messages,
@@ -68,8 +73,23 @@ function App() {
     onThinkingEnd: (sessionId: string, status: 'done' | 'error') => {
       updateSessionStatus(sessionId, status);
     },
-    onPersistMessages: (sessionId: string, msgs: ChatMessage[]) => {
-      updateSessionMessages(sessionId, msgs);
+    onStreamComplete: async (sessionId: string) => {
+      // Refresh session list for sidebar (title, status)
+      refreshSessions();
+      // Fetch updated session to get metadata (tables)
+      try {
+        const s = await fetchSession(sessionId);
+        setLocalSession(s);
+      } catch {
+        // ignore
+      }
+      // Optimistically update title
+      const lastUser = [...messages].reverse().find(m => m.role === 'user');
+      if (lastUser) {
+        const text = lastUser.content.trim();
+        const title = text.length > 20 ? text.slice(0, 20) + '...' : text;
+        updateSessionTitle(sessionId, title);
+      }
     },
   });
 
@@ -78,20 +98,19 @@ function App() {
     if (activeSession && activeSessionId !== prevSessionIdRef.current) {
       prevSessionIdRef.current = activeSessionId;
       loadMessages(activeSession.messages);
-      // Restore loading state if the session is still thinking
+      setLocalSession(activeSession);
       if (activeSession.status === 'thinking') {
         setLoading(true);
       } else {
         setLoading(false);
       }
-      // Clear done/error dot on switch — "mark as read"
       if (activeSession.status === 'done' || activeSession.status === 'error') {
         clearSessionStatus(activeSession.id);
       }
     } else if (!activeSession && activeSessionId !== prevSessionIdRef.current) {
-      // No active session - clear messages for welcome screen
       prevSessionIdRef.current = activeSessionId;
       clearMessages();
+      setLocalSession(null);
     }
   }, [activeSessionId, activeSession, loadMessages, clearMessages, setLoading, clearSessionStatus]);
 
@@ -107,36 +126,12 @@ function App() {
       if (id && id !== activeSessionId) {
         switchSession(id);
       } else if (!id && activeSessionId) {
-        // Navigated to root - show welcome screen
         clearMessages();
       }
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, [activeSessionId, switchSession, clearMessages]);
-
-  // Save messages to active session when they change
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (!activeSessionId) return;
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      updateSessionMessages(activeSessionId, messages);
-    }, 300);
-    return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    };
-  }, [messages, activeSessionId, updateSessionMessages]);
-
-  const lastQuestion = messages.length > 0
-    ? [...messages].reverse().find(m => m.role === 'user')?.content || ''
-    : '';
-
-  const lastAgentMessage = messages.length > 0
-    ? [...messages].reverse().find(m => m.role === 'agent')
-    : undefined;
-
-  const steps: ThinkingStep[] = lastAgentMessage?.steps || [];
 
   const sessionStatus =
     activeSession?.status === 'done' || activeSession?.status === 'error'
@@ -146,11 +141,11 @@ function App() {
   const handleNewSession = () => {
     clearActiveSession();
     clearMessages();
+    setLocalSession(null);
     setSidebarOpen(false);
   };
 
   const handleSendMessage = (message: string) => {
-    // Create session on first message if none exists
     if (!activeSessionId) {
       const newId = createSession();
       setTimeout(() => {
@@ -169,6 +164,9 @@ function App() {
     switchSession(id);
     setSidebarOpen(false);
   };
+
+  // Use localSession (updated after stream) or activeSession (loaded on switch)
+  const insightSession = localSession || activeSession;
 
   return (
     <div className="flex h-screen overflow-hidden bg-white">
@@ -228,9 +226,7 @@ function App() {
       {insightOpen && (
         <div className="hidden md:flex flex-shrink-0 h-full overflow-hidden insight-panel-enter">
           <InsightPanel
-            lastQuestion={lastQuestion}
-            steps={steps}
-            loading={loading}
+            session={insightSession}
             messages={messages}
             isOpen={insightOpen}
             onToggle={() => setInsightOpen(false)}

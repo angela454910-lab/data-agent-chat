@@ -29,10 +29,6 @@ export interface ChatMessage {
   steps: ThinkingStep[];
 }
 
-export interface ChatResponse {
-  answer: string;
-  question: string;
-}
 
 export interface HealthResponse {
   ok: boolean;
@@ -40,9 +36,26 @@ export interface HealthResponse {
   version: string;
 }
 
+export interface SessionMetadata {
+  tables: string[];
+  summary?: string | null;
+}
+
 export interface Session {
   id: string;
   title: string;
   messages: ChatMessage[];
   status?: 'thinking' | 'done' | 'error';
+  metadata?: SessionMetadata;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface SessionSummary {
+  id: string;
+  title: string;
+  status?: 'thinking' | 'done' | 'error';
+  updated_at: string;
+  created_at: string;
+  message_count: number;
 }

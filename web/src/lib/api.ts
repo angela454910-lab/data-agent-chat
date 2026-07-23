@@ -1,4 +1,4 @@
-import type { ChatResponse, SchemaTable, HealthResponse, ThinkingStep } from '../types';
+import type { SchemaTable, HealthResponse, ThinkingStep, Session, SessionSummary } from '../types';
 
 const BASE = '';
 
@@ -15,14 +15,22 @@ export async function fetchSchema(): Promise<SchemaTable[]> {
   return data.tables;
 }
 
-export async function sendChat(message: string): Promise<ChatResponse> {
-  const res = await fetch(`${BASE}/api/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message }),
-  });
-  if (!res.ok) throw new Error('Chat request failed');
+export async function fetchSessions(): Promise<SessionSummary[]> {
+  const res = await fetch(`${BASE}/api/sessions`);
+  if (!res.ok) throw new Error('Failed to fetch sessions');
+  const data = await res.json();
+  return data.sessions;
+}
+
+export async function fetchSession(id: string): Promise<Session> {
+  const res = await fetch(`${BASE}/api/sessions/${id}`);
+  if (!res.ok) throw new Error('Failed to fetch session');
   return res.json();
+}
+
+export async function deleteSessionApi(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/sessions/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete session');
 }
 
 export interface StreamCallbacks {
@@ -36,12 +44,13 @@ let stepCounter = 0;
 
 export async function sendChatStream(
   message: string,
+  sessionId: string,
   callbacks: StreamCallbacks,
 ): Promise<void> {
   const res = await fetch(`${BASE}/api/chat/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, session_id: sessionId }),
   });
 
   if (!res.ok) {

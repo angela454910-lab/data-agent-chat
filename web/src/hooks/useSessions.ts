@@ -1,83 +1,68 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import type { Session, ChatMessage } from '../types';
-
-const STORAGE_KEY = 'data-agent-sessions';
-
-function loadSessions(): Session[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const sessions: Session[] = JSON.parse(raw);
-      // Only restore sessions that have messages
-      return sessions.filter(s => s.messages.length > 0);
-    }
-  } catch {
-    // ignore
-  }
-  return [];
-}
-
-function saveSessions(sessions: Session[]) {
-  // Only persist sessions that have messages
-  const nonEmpty = sessions.filter(s => s.messages.length > 0);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(nonEmpty));
-}
+import type { Session, SessionSummary } from '../types';
+import { fetchSessions, fetchSession, deleteSessionApi } from '../lib/api';
 
 function generateId() {
   return `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function deriveTitle(messages: ChatMessage[]): string {
-  const firstUser = messages.find(m => m.role === 'user');
-  if (!firstUser) return '新对话';
-  const text = firstUser.content.trim();
-  return text.length > 20 ? text.slice(0, 20) + '...' : text;
-}
-
 export function useSessions(initialSessionId?: string | null) {
-  const [sessions, setSessions] = useState<Session[]>(loadSessions);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(() => {
-    const loaded = loadSessions();
-    if (loaded.length === 0) return null;
-    if (initialSessionId && loaded.some(s => s.id === initialSessionId)) {
-      return initialSessionId;
-    }
-    return loaded[0].id;
-  });
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(initialSessionId ?? null);
+  const [activeSession, setActiveSession] = useState<Session | null>(null);
   const initialized = useRef(false);
 
-  // Mark as initialized after first render
-  useEffect(() => {
-    initialized.current = true;
+  // Load session list on mount
+  const refreshSessions = useCallback(async () => {
+    try {
+      const list = await fetchSessions();
+      setSessions(list);
+    } catch (e) {
+      console.error('Failed to load sessions:', e);
+    }
   }, []);
 
-  // Persist to localStorage
   useEffect(() => {
-    if (initialized.current) {
-      saveSessions(sessions);
-    }
-  }, [sessions]);
+    refreshSessions();
+    initialized.current = true;
+  }, [refreshSessions]);
 
-  const activeSession = sessions.find(s => s.id === activeSessionId) || null;
+  // Load full session when activeSessionId changes
+  useEffect(() => {
+    if (activeSessionId) {
+      fetchSession(activeSessionId)
+        .then(s => setActiveSession(s))
+        .catch(e => {
+          console.error('Failed to load session:', e);
+          setActiveSession(null);
+        });
+    } else {
+      setActiveSession(null);
+    }
+  }, [activeSessionId]);
 
   const createSession = useCallback(() => {
-    const newSession: Session = {
-      id: generateId(),
-      title: '新对话',
-      messages: [],
-    };
-    setSessions(prev => [newSession, ...prev]);
-    setActiveSessionId(newSession.id);
-    return newSession.id;
+    const id = generateId();
+    // Optimistic placeholder for sidebar; backend creates lazily on first message
+    const now = new Date().toISOString();
+    setSessions(prev => [
+      { id, title: '新对话', status: undefined, updated_at: now, created_at: now, message_count: 0 },
+      ...prev,
+    ]);
+    setActiveSessionId(id);
+    // Don't set activeSession — no messages yet, backend doesn't have it
+    setActiveSession(null);
+    return id;
   }, []);
 
-  const deleteSession = useCallback((id: string) => {
+  const deleteSession = useCallback(async (id: string) => {
+    try {
+      await deleteSessionApi(id);
+    } catch (e) {
+      console.error('Failed to delete session:', e);
+    }
     setSessions(prev => prev.filter(s => s.id !== id));
-    setActiveSessionId(prev => {
-      if (prev !== id) return prev;
-      // Switch to first remaining, or null (no auto-create)
-      return null;
-    });
+    setActiveSessionId(prev => (prev === id ? null : prev));
   }, []);
 
   const switchSession = useCallback((id: string) => {
@@ -88,33 +73,18 @@ export function useSessions(initialSessionId?: string | null) {
     setActiveSessionId(null);
   }, []);
 
-  const updateSessionMessages = useCallback((id: string, messages: ChatMessage[]) => {
-    setSessions(prev =>
-      prev.map(s => {
-        if (s.id !== id) return s;
-        if (s.messages === messages) return s;
-        return {
-          ...s,
-          messages,
-          title: deriveTitle(messages),
-        };
-      }),
-    );
+  // Local status tracking for sidebar dots (backend also persists, but this is for real-time UX)
+  const updateSessionStatus = useCallback((id: string, status: 'thinking' | 'done' | 'error') => {
+    setSessions(prev => prev.map(s => (s.id === id ? { ...s, status } : s)));
   }, []);
 
-  const updateSessionStatus = useCallback(
-    (id: string, status: 'thinking' | 'done' | 'error') => {
-      setSessions(prev =>
-        prev.map(s => (s.id === id ? { ...s, status } : s)),
-      );
-    },
-    [],
-  );
-
   const clearSessionStatus = useCallback((id: string) => {
-    setSessions(prev =>
-      prev.map(s => (s.id === id ? { ...s, status: undefined } : s)),
-    );
+    setSessions(prev => prev.map(s => (s.id === id ? { ...s, status: undefined } : s)));
+  }, []);
+
+  // Update title optimistically after stream (backend will have the real title on next refresh)
+  const updateSessionTitle = useCallback((id: string, title: string) => {
+    setSessions(prev => prev.map(s => (s.id === id ? { ...s, title } : s)));
   }, []);
 
   return {
@@ -125,8 +95,9 @@ export function useSessions(initialSessionId?: string | null) {
     deleteSession,
     switchSession,
     clearActiveSession,
-    updateSessionMessages,
     updateSessionStatus,
     clearSessionStatus,
+    updateSessionTitle,
+    refreshSessions,
   };
 }

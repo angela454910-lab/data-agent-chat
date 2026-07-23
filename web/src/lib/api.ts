@@ -1,4 +1,4 @@
-import type { SchemaTable, HealthResponse, ThinkingStep, Session, SessionSummary } from '../types';
+import type { SchemaTable, HealthResponse, ThinkingStep, Session, SessionSummary, ChatMessage } from '../types';
 
 const BASE = '';
 
@@ -27,10 +27,20 @@ export async function fetchSession(id: string): Promise<Session> {
   if (!res.ok) throw new Error('Failed to fetch session');
   return res.json();
 }
-
 export async function deleteSessionApi(id: string): Promise<void> {
   const res = await fetch(`${BASE}/api/sessions/${id}`, { method: 'DELETE' });
   if (!res.ok) throw new Error('Failed to delete session');
+}
+
+export async function generateRecap(messages: ChatMessage[]): Promise<string> {
+  const res = await fetch(`${BASE}/api/chat/summary`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages }),
+  });
+  if (!res.ok) throw new Error('Failed to generate recap');
+  const data = await res.json();
+  return data.summary;
 }
 
 export interface StreamCallbacks {

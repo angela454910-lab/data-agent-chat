@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import time
 from contextlib import asynccontextmanager
@@ -31,11 +30,6 @@ from app.session.store import (
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 WEB_DIST_DIR = BACKEND_DIR.parent / "web" / "dist"
-
-# Debounce timers for summary generation: session_id -> asyncio.Task
-_summary_tasks: dict[str, asyncio.Task] = {}
-_SUMMARY_DEBOUNCE_SECONDS = 30
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -140,34 +134,6 @@ async def chat_summary(request: SummaryRequest):
     return {"summary": summary}
 
 
-def _schedule_summary(session_id: str) -> None:
-    """Schedule a debounced summary generation for a session."""
-    # Cancel any existing pending task
-    existing = _summary_tasks.get(session_id)
-    if existing and not existing.done():
-        existing.cancel()
-
-    async def _generate():
-        try:
-            await asyncio.sleep(_SUMMARY_DEBOUNCE_SECONDS)
-            session = get_session(session_id)
-            if session is None:
-                return
-            messages = session.get("messages", [])
-            if len(messages) < 2:
-                return
-            summary = generate_summary(messages)
-            if summary:
-                update_metadata(session_id, {"summary": summary})
-                print(f"[Summary] Generated for session {session_id}")
-        except asyncio.CancelledError:
-            pass
-        except Exception as e:
-            print(f"[Summary] Error for session {session_id}: {e}")
-        finally:
-            _summary_tasks.pop(session_id, None)
-
-    _summary_tasks[session_id] = asyncio.ensure_future(_generate())
 
 
 @app.post("/api/chat/stream")
@@ -226,14 +192,16 @@ async def chat_stream(request: ChatStreamRequest):
                     "timestamp": int(time.time()),
                     "steps": accumulated_steps,
                 })
-                update_metadata(session_id, {"tables": list(tables_used)})
                 current = get_session(session_id) or {}
+                # Accumulate tables across the whole session instead of
+                # overwriting with only this turn's tables
+                existing_tables = current.get("metadata", {}).get("tables", [])
+                merged_tables = list(dict.fromkeys([*existing_tables, *sorted(tables_used)]))
+                update_metadata(session_id, {"tables": merged_tables})
                 updates: dict = {"status": "done"}
                 if current.get("title") == "新对话":
                     updates["title"] = derive_title(message)
                 update_session(session_id, updates)
-                # Schedule debounced summary generation
-                _schedule_summary(session_id)
 
             yield "data: [DONE]\n\n"
         except Exception as e:

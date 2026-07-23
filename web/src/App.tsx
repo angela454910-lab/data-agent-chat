@@ -53,8 +53,6 @@ function App() {
   const activeSessionIdRef = useRef<string | null>(activeSessionId);
   activeSessionIdRef.current = activeSessionId;
 
-  const prevSessionIdRef = useRef<string | null>(null);
-
   // Local session mirror — updated after stream for immediate metadata display
   const [localSession, setLocalSession] = useState<Session | null>(null);
 
@@ -93,10 +91,11 @@ function App() {
     },
   });
 
-  // Load messages when switching sessions
+  // Load messages when the active session object changes (real switch or clear).
+  // Keying on activeSession identity avoids a race where activeSessionId has
+  // flipped but activeSession still holds the previous (stale) session object.
   useEffect(() => {
-    if (activeSession && activeSessionId !== prevSessionIdRef.current) {
-      prevSessionIdRef.current = activeSessionId;
+    if (activeSession) {
       loadMessages(activeSession.messages);
       setLocalSession(activeSession);
       if (activeSession.status === 'thinking') {
@@ -107,12 +106,11 @@ function App() {
       if (activeSession.status === 'done' || activeSession.status === 'error') {
         clearSessionStatus(activeSession.id);
       }
-    } else if (!activeSession && activeSessionId !== prevSessionIdRef.current) {
-      prevSessionIdRef.current = activeSessionId;
+    } else if (!activeSession) {
       clearMessages();
       setLocalSession(null);
     }
-  }, [activeSessionId, activeSession, loadMessages, clearMessages, setLoading, clearSessionStatus]);
+  }, [activeSession, loadMessages, clearMessages, setLoading, clearSessionStatus]);
 
   // Sync activeSessionId to URL
   useEffect(() => {

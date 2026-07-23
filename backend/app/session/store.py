@@ -37,7 +37,6 @@ def create_session(session_id: str) -> dict:
         "title": "新对话",
         "messages": [],
         "status": None,
-        "metadata": {"tables": [], "summary": None},
         "created_at": _now_iso(),
         "updated_at": _now_iso(),
     }

@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Menu, Sparkles } from 'lucide-react';
+import { Send, Menu, Sparkles, X, Loader2 } from 'lucide-react';
 import type { ChatMessage } from '../types';
 import { MessageBubble } from './MessageBubble';
 import { StarterCards } from './StarterCards';
+import { useRecap } from '../hooks/useRecap';
 
 interface Props {
   messages: ChatMessage[];
@@ -19,6 +20,8 @@ export function ChatPanel({ messages, loading, onSend, onMenuClick, sessionStatu
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+
+  const { recap, generating, dismiss } = useRecap(messages, input);
 
   const isEmptyConversation = messages.length === 0;
   const isWelcome = isEmptyConversation && !inputMoved;
@@ -125,6 +128,50 @@ export function ChatPanel({ messages, loading, onSend, onMenuClick, sessionStatu
         style={{ transition: 'all 0.5s cubic-bezier(0.16, 1, 0.3, 1)' }}
       >
         <div className="max-w-3xl mx-auto">
+          {(recap || generating) && (
+            <div
+              className="ann ann-n ann-amber ann-no-mark mb-3"
+              style={{ display: 'block', width: '100%' }}
+              data-note={generating ? '回顾…' : '回顾'}
+            >
+              <div
+                className="relative rounded-xl px-4 py-3"
+                style={{
+                  transform: 'rotate(-1.1deg)',
+                  border: '1.5px dashed #d9a641',
+                  background: 'color-mix(in oklch, #ffb000 8%, transparent)',
+                  fontFamily: "'Shantell Sans', cursive",
+                  color: '#9a6212',
+                  lineHeight: 1.5,
+                  fontSize: '0.9rem',
+                }}
+              >
+                {generating ? (
+                  <span className="inline-flex items-center gap-1.5 opacity-80">
+                    <Loader2 size={13} className="animate-spin" />
+                    正在生成回顾…
+                  </span>
+                ) : (
+                  <span className="flex items-start gap-2">
+                    <Sparkles size={13} className="mt-1 flex-shrink-0" style={{ color: '#b8751a' }} />
+                    <span className="flex-1">{recap}</span>
+                  </span>
+                )}
+                {!generating && (
+                  <button
+                    onClick={dismiss}
+                    className="absolute top-1.5 right-1.5 rounded p-0.5 transition-colors"
+                    style={{ color: '#c8a14a' }}
+                    onMouseEnter={e => (e.currentTarget.style.color = '#9a6212')}
+                    onMouseLeave={e => (e.currentTarget.style.color = '#c8a14a')}
+                    aria-label="关闭回顾"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
           {isEmptyConversation && (
             <p className="ann ann-se ann-blue ann-no-mark text-xs text-slate-400 mb-1" data-note="或输入你想问的问题">
               &nbsp;

@@ -1,7 +1,5 @@
-import { useState, useEffect } from 'react';
-import { X, BarChart3, Hash, Database, FileText, Sparkles, RefreshCw, Table2 } from 'lucide-react';
+import { X, BarChart3, Hash, Database, FileText, Table2 } from 'lucide-react';
 import type { Session, ChatMessage } from '../types';
-import { fetchSession } from '../lib/api';
 
 interface Props {
   session: Session | null;
@@ -11,49 +9,9 @@ interface Props {
 }
 
 export function InsightPanel({ session, messages, onToggle }: Props) {
-  const sessionId = session?.id;
   const metadata = session?.metadata;
   const tables = metadata?.tables ?? [];
-  const summary = metadata?.summary;
 
-  // Poll for summary if not yet generated (backend debounces 30s)
-  const [polledSummary, setPolledSummary] = useState<string | null>(null);
-  const [polling, setPolling] = useState(false);
-
-  useEffect(() => {
-    setPolledSummary(null);
-    if (!sessionId || summary) return;
-
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout>;
-
-    const poll = async () => {
-      if (cancelled) return;
-      setPolling(true);
-      try {
-        const s = await fetchSession(sessionId);
-        if (cancelled) return;
-        if (s.metadata?.summary) {
-          setPolledSummary(s.metadata.summary);
-          setPolling(false);
-          return;
-        }
-      } catch {
-        // ignore
-      }
-      timer = setTimeout(poll, 10000);
-    };
-
-    // Start polling after a short delay (give backend time to generate)
-    timer = setTimeout(poll, 35000);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [sessionId, summary]);
-
-  const displaySummary = summary || polledSummary;
   const totalMessages = messages.length;
   const totalSteps = messages.reduce((sum, m) => sum + (m.steps?.length || 0), 0);
   const userTurns = messages.filter(m => m.role === 'user').length;
@@ -89,28 +47,6 @@ export function InsightPanel({ session, messages, onToggle }: Props) {
           </div>
         ) : (
           <div className="space-y-5">
-            {/* Summary */}
-            <div>
-              <div className="flex items-center gap-1.5 mb-2">
-                <Sparkles size={13} className="text-amber-500" />
-                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">AI 总结</h3>
-              </div>
-              {displaySummary ? (
-                <p className="text-sm text-slate-700 bg-amber-50/50 rounded-lg p-3 border border-amber-100 leading-relaxed">
-                  {displaySummary}
-                </p>
-              ) : polling ? (
-                <div className="flex items-center gap-2 text-xs text-slate-400 bg-slate-50 rounded-lg p-3 border border-slate-200">
-                  <RefreshCw size={12} className="animate-spin" />
-                  <span>正在生成总结...</span>
-                </div>
-              ) : (
-                <p className="text-xs text-slate-400 bg-slate-50 rounded-lg p-3 border border-slate-200">
-                  会话停止后将自动生成总结
-                </p>
-              )}
-            </div>
-
             {/* Tables Used */}
             <div>
               <div className="flex items-center gap-1.5 mb-2">

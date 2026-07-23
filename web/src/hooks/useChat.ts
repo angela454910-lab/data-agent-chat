@@ -14,6 +14,12 @@ interface UseChatOptions {
   activeSessionIdRef: React.MutableRefObject<string | null>;
 }
 
+interface StreamState {
+  agentMsgId: string;
+  accumulated: string;
+  messages: ChatMessage[];
+}
+
 export function useChat({
   onThinkingStart,
   onThinkingEnd,
@@ -23,11 +29,9 @@ export function useChat({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Keep messages in a ref so stream callbacks can always read the latest state
   const messagesRef = useRef<ChatMessage[]>([]);
   messagesRef.current = messages;
 
-  // Store callbacks in refs to avoid stale closures in stream callbacks
   const onThinkingStartRef = useRef(onThinkingStart);
   onThinkingStartRef.current = onThinkingStart;
   const onThinkingEndRef = useRef(onThinkingEnd);
@@ -35,12 +39,21 @@ export function useChat({
   const onPersistMessagesRef = useRef(onPersistMessages);
   onPersistMessagesRef.current = onPersistMessages;
 
-  // Track which session triggered the current stream
-  const thinkingSessionIdRef = useRef<string | null>(null);
-  // Track the full message list for the thinking session (survives session switches)
-  const thinkingMessagesRef = useRef<ChatMessage[]>([]);
+  const activeStreamsRef = useRef<Map<string, StreamState>>(new Map());
+
+  const syncActiveSession = useCallback(
+    (sid: string, msgs: ChatMessage[]) => {
+      if (sid === activeSessionIdRef.current) {
+        setMessages(msgs);
+      }
+    },
+    [activeSessionIdRef],
+  );
 
   const sendMessage = useCallback(async (content: string, sessionId?: string) => {
+    const sid = sessionId || activeSessionIdRef.current;
+    if (!sid) return;
+
     const userMsg: ChatMessage = {
       id: nextId(),
       role: 'user',
@@ -59,103 +72,80 @@ export function useChat({
       steps: [],
     };
 
-    // Build the full message list for the thinking session from the current messages
-    const currentMessages = messagesRef.current;
-    const fullMessages = [...currentMessages, userMsg, agentMsg];
-    thinkingMessagesRef.current = fullMessages;
+    const existing = activeStreamsRef.current.get(sid);
+    const baseMessages = existing
+      ? existing.messages
+      : sid === activeSessionIdRef.current
+        ? messagesRef.current
+        : [];
+    const fullMessages = [...baseMessages, userMsg, agentMsg];
 
-    setMessages(prev => [...prev, userMsg, agentMsg]);
-    setLoading(true);
+    activeStreamsRef.current.set(sid, {
+      agentMsgId,
+      accumulated: '',
+      messages: fullMessages,
+    });
 
-    // Track which session is thinking
-    const sid = sessionId || activeSessionIdRef.current;
-    thinkingSessionIdRef.current = sid;
-    if (sid) {
-      onThinkingStartRef.current?.(sid);
-      // Persist initial messages so the session has the user message immediately
-      onPersistMessagesRef.current?.(sid, fullMessages);
+    if (sid === activeSessionIdRef.current) {
+      setMessages(fullMessages);
+      setLoading(true);
     }
 
-    let accumulated = '';
+    onThinkingStartRef.current?.(sid);
+    onPersistMessagesRef.current?.(sid, fullMessages);
 
     await sendChatStream(content, {
       onChunk: (chunk) => {
-        accumulated += chunk;
-        // Update the thinking session's messages (always, even if session switched)
-        thinkingMessagesRef.current = thinkingMessagesRef.current.map(m =>
-          m.id === agentMsgId ? { ...m, content: accumulated, loading: false } : m,
+        const stream = activeStreamsRef.current.get(sid);
+        if (!stream) return;
+        stream.accumulated += chunk;
+        stream.messages = stream.messages.map(m =>
+          m.id === agentMsgId ? { ...m, content: stream.accumulated, loading: false } : m,
         );
-        if (thinkingSessionIdRef.current) {
-          onPersistMessagesRef.current?.(thinkingSessionIdRef.current, thinkingMessagesRef.current);
-        }
-        // Also update the UI state (no-op if session switched since agentMsgId won't exist)
-        setMessages(prev =>
-          prev.map(m =>
-            m.id === agentMsgId ? { ...m, content: accumulated, loading: false } : m,
-          ),
-        );
+        onPersistMessagesRef.current?.(sid, stream.messages);
+        syncActiveSession(sid, stream.messages);
       },
       onStep: (step: ThinkingStep) => {
-        // Update the thinking session's messages (always, even if session switched)
-        thinkingMessagesRef.current = thinkingMessagesRef.current.map(m =>
+        const stream = activeStreamsRef.current.get(sid);
+        if (!stream) return;
+        stream.messages = stream.messages.map(m =>
           m.id === agentMsgId ? { ...m, steps: [...m.steps, step] } : m,
         );
-        if (thinkingSessionIdRef.current) {
-          onPersistMessagesRef.current?.(thinkingSessionIdRef.current, thinkingMessagesRef.current);
-        }
-        // Also update the UI state
-        setMessages(prev =>
-          prev.map(m =>
-            m.id === agentMsgId ? { ...m, steps: [...m.steps, step] } : m,
-          ),
-        );
+        onPersistMessagesRef.current?.(sid, stream.messages);
+        syncActiveSession(sid, stream.messages);
       },
       onDone: () => {
-        // Only clear loading if the thinking session is still the active one
-        if (thinkingSessionIdRef.current === activeSessionIdRef.current) {
-          setLoading(false);
-        }
-        // Final update to thinking messages
-        thinkingMessagesRef.current = thinkingMessagesRef.current.map(m =>
-          m.id === agentMsgId ? { ...m, loading: false } : m,
-        );
-        if (thinkingSessionIdRef.current) {
-          onPersistMessagesRef.current?.(thinkingSessionIdRef.current, thinkingMessagesRef.current);
-          onThinkingEndRef.current?.(thinkingSessionIdRef.current, 'done');
-          thinkingSessionIdRef.current = null;
-        }
-        setMessages(prev =>
-          prev.map(m =>
+        const stream = activeStreamsRef.current.get(sid);
+        if (stream) {
+          stream.messages = stream.messages.map(m =>
             m.id === agentMsgId ? { ...m, loading: false } : m,
-          ),
-        );
+          );
+          onPersistMessagesRef.current?.(sid, stream.messages);
+          if (sid === activeSessionIdRef.current) {
+            setMessages(stream.messages);
+            setLoading(false);
+          }
+          activeStreamsRef.current.delete(sid);
+        }
+        onThinkingEndRef.current?.(sid, 'done');
       },
       onError: (err) => {
-        // Only clear loading if the thinking session is still the active one
-        if (thinkingSessionIdRef.current === activeSessionIdRef.current) {
-          setLoading(false);
+        const stream = activeStreamsRef.current.get(sid);
+        if (stream) {
+          stream.messages = stream.messages.map(m =>
+            m.id === agentMsgId ? { ...m, content: `Error: ${err}`, loading: false } : m,
+          );
+          onPersistMessagesRef.current?.(sid, stream.messages);
+          if (sid === activeSessionIdRef.current) {
+            setMessages(stream.messages);
+            setLoading(false);
+          }
+          activeStreamsRef.current.delete(sid);
         }
-        // Final update to thinking messages with error
-        thinkingMessagesRef.current = thinkingMessagesRef.current.map(m =>
-          m.id === agentMsgId
-            ? { ...m, content: `Error: ${err}`, loading: false }
-            : m,
-        );
-        if (thinkingSessionIdRef.current) {
-          onPersistMessagesRef.current?.(thinkingSessionIdRef.current, thinkingMessagesRef.current);
-          onThinkingEndRef.current?.(thinkingSessionIdRef.current, 'error');
-          thinkingSessionIdRef.current = null;
-        }
-        setMessages(prev =>
-          prev.map(m =>
-            m.id === agentMsgId
-              ? { ...m, content: `Error: ${err}`, loading: false }
-              : m,
-          ),
-        );
+        onThinkingEndRef.current?.(sid, 'error');
       },
     });
-  }, [activeSessionIdRef]);
+  }, [activeSessionIdRef, syncActiveSession]);
 
   const clearMessages = useCallback(() => {
     setMessages([]);

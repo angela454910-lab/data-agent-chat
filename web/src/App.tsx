@@ -52,7 +52,6 @@ function App() {
   activeSessionIdRef.current = activeSessionId;
 
   const prevSessionIdRef = useRef<string | null>(null);
-  const thinkingSessionIdRef = useRef<string | null>(null);
 
   const {
     messages,
@@ -64,16 +63,12 @@ function App() {
   } = useChat({
     activeSessionIdRef,
     onThinkingStart: (sessionId: string) => {
-      thinkingSessionIdRef.current = sessionId;
       updateSessionStatus(sessionId, 'thinking');
     },
     onThinkingEnd: (sessionId: string, status: 'done' | 'error') => {
       updateSessionStatus(sessionId, status);
-      thinkingSessionIdRef.current = null;
     },
     onPersistMessages: (sessionId: string, msgs: ChatMessage[]) => {
-      // Persist streaming messages directly to the session,
-      // even when the user is viewing a different session
       updateSessionMessages(sessionId, msgs);
     },
   });
@@ -91,7 +86,7 @@ function App() {
       }
       // Clear done/error dot on switch — "mark as read"
       if (activeSession.status === 'done' || activeSession.status === 'error') {
-        clearSessionStatus(activeSessionId);
+        clearSessionStatus(activeSession.id);
       }
     } else if (!activeSession && activeSessionId !== prevSessionIdRef.current) {
       // No active session - clear messages for welcome screen

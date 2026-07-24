@@ -48,7 +48,7 @@ export interface Session {
   status?: 'thinking' | 'done' | 'error';
   metadata?: SessionMetadata;
   created_at?: string;
-  updated_at?: string;
+ updated_at?: string;
 }
 
 export interface SessionSummary {
@@ -58,4 +58,8 @@ export interface SessionSummary {
   updated_at: string;
   created_at: string;
   message_count: number;
+  unread?: boolean;
+  // true while the session exists only as a client-side optimistic placeholder
+  // (no first message sent yet, backend doesn't know about it)
+  local?: boolean;
 }

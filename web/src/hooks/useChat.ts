@@ -18,6 +18,7 @@ interface StreamState {
   agentMsgId: string;
   accumulated: string;
   messages: ChatMessage[];
+  controller: AbortController;
 }
 
 export function useChat({
@@ -80,10 +81,12 @@ export function useChat({
         : [];
     const fullMessages = [...baseMessages, userMsg, agentMsg];
 
+    const controller = new AbortController();
     activeStreamsRef.current.set(sid, {
       agentMsgId,
       accumulated: '',
       messages: fullMessages,
+      controller,
     });
 
     if (sid === activeSessionIdRef.current) {
@@ -140,6 +143,25 @@ export function useChat({
         }
         onThinkingEndRef.current?.(sid, 'error');
       },
+    }, controller.signal).catch((e: any) => {
+      // Aborted (e.g. the session was deleted mid-flight): tear down silently
+      // without surfacing an error to the user.
+      if (e?.name === 'AbortError') {
+        activeStreamsRef.current.delete(sid);
+        return;
+      }
+      const stream = activeStreamsRef.current.get(sid);
+      if (stream) {
+        stream.messages = stream.messages.map(m =>
+          m.id === agentMsgId ? { ...m, content: `Error: ${e?.message ?? 'network error'}`, loading: false } : m,
+        );
+        if (sid === activeSessionIdRef.current) {
+          setMessages(stream.messages);
+          setLoading(false);
+        }
+        activeStreamsRef.current.delete(sid);
+      }
+      onThinkingEndRef.current?.(sid, 'error');
     });
   }, [activeSessionIdRef, syncActiveSession]);
 
@@ -152,5 +174,33 @@ export function useChat({
     setMessages(msgs);
   }, []);
 
-  return { messages, loading, sendMessage, clearMessages, loadMessages, setMessages, setLoading };
+  const isStreaming = useCallback(
+    (sid: string) => activeStreamsRef.current.has(sid),
+    [],
+  );
+
+  // When switching back to a session whose turn is still streaming in the
+  // background, restore its live in-progress messages instead of showing the
+  // stale backend snapshot (which has no partial answer yet).
+  const restoreStream = useCallback((sid: string) => {
+    const stream = activeStreamsRef.current.get(sid);
+    if (!stream) return false;
+    setMessages(stream.messages);
+    setLoading(true);
+    return true;
+  }, []);
+
+  // Disconnect an in-flight turn (used when its session is deleted). Aborts
+  // the fetch and drops the in-memory stream state without surfacing an error.
+  const abortStream = useCallback((sid: string) => {
+    const stream = activeStreamsRef.current.get(sid);
+    if (!stream) return;
+    stream.controller.abort();
+    activeStreamsRef.current.delete(sid);
+    if (sid === activeSessionIdRef.current) {
+      setLoading(false);
+    }
+  }, [activeSessionIdRef]);
+
+  return { messages, loading, sendMessage, clearMessages, loadMessages, setMessages, setLoading, isStreaming, restoreStream, abortStream };
 }

@@ -17,9 +17,9 @@ export function ChatPanel({ messages, loading, onSend, onMenuClick, sessionStatu
   const [input, setInput] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const [inputMoved, setInputMoved] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
+ const messagesEndRef = useRef<HTMLDivElement>(null);
+ const textareaRef = useRef<HTMLTextAreaElement>(null);
+ const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   const { recap, generating, dismiss } = useRecap(messages, input);
 
@@ -41,9 +41,15 @@ export function ChatPanel({ messages, loading, onSend, onMenuClick, sessionStatu
     }
   }, [isEmptyConversation]);
 
+  // Only follow-to-bottom while the active turn is streaming (in progress).
+  // For finished conversations we leave the scroll alone: switching already
+  // blanks the view first, so it opens from the top instead of jumping to the
+  // bottom the way a live stream does.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (loading) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, loading]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

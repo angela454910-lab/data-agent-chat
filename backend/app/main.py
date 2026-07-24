@@ -24,8 +24,8 @@ from app.session.store import (
     delete_session,
     append_message,
     update_session,
-    update_metadata,
-    derive_title,
+   update_metadata,
+   derive_title,
 )
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -115,16 +115,18 @@ async def sessions_list():
 
 @app.get("/api/sessions/{session_id}")
 async def session_detail(session_id: str):
-    session = get_session(session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="session not found")
-    return session
+    # sessionId is frontend-generated, so any reference to it must ensure a
+    # record exists -- a brand-new chat (message sent, answer not back yet)
+    # would otherwise 404 here. The streaming endpoint updates this record as
+    # the answer arrives. (get_session is still used elsewhere for reads that
+    # should NOT silently create, e.g. inside the stream's own logic.)
+    return get_or_create(session_id)
 
 
 @app.delete("/api/sessions/{session_id}")
 async def session_delete(session_id: str):
-    deleted = delete_session(session_id)
-    return {"deleted": deleted}
+   deleted = delete_session(session_id)
+   return {"deleted": deleted}
 
 @app.get("/{full_path:path}")
 async def spa_catch_all(full_path: str):

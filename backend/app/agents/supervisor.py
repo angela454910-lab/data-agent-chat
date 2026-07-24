@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import asyncio
 import time
 from typing import TypedDict, AsyncGenerator
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
@@ -192,7 +193,11 @@ async def stream_supervisor(message: str) -> AsyncGenerator[dict, None]:
         yield {"type": "answer", "content": "请输入问题"}
         return
 
-    agent_name = classify_intent(message)
+    # classify_intent runs a synchronous LLM call (model.invoke + blocking
+    # time.sleep retries). Off-load it to a worker thread so it doesn't hold
+    # the event loop -- otherwise concurrent requests (e.g. the sidebar
+    # fetching the session the user just switched to) stall behind it.
+    agent_name = await asyncio.to_thread(classify_intent, message)
 
     if agent_name == "out_of_scope":
         yield {"type": "answer", "content": OUT_OF_SCOPE_MESSAGE}
@@ -245,7 +250,11 @@ async def stream_supervisor(message: str) -> AsyncGenerator[dict, None]:
                         "output": output_str
                     }
 
-            data_result = data_analysis_agent.invoke(data_state, config=AGENT_CONFIG)
+            # Sync invoke that re-runs the agent to extract the final answer;
+            # off-loaded so it doesn't block the event loop mid-request.
+            data_result = await asyncio.to_thread(
+                data_analysis_agent.invoke, data_state, config=AGENT_CONFIG
+            )
             answer = _extract_answer(data_result.get("messages", []))
             yield {"type": "answer", "content": answer or "无法回答"}
 
@@ -284,7 +293,9 @@ async def stream_supervisor(message: str) -> AsyncGenerator[dict, None]:
                     "output": output_str
                 }
 
-        result = agent.invoke(initial_state, config=AGENT_CONFIG)
+        # Sync invoke that re-runs the agent to extract the final answer;
+        # off-loaded so it doesn't block the event loop mid-request.
+        result = await asyncio.to_thread(agent.invoke, initial_state, config=AGENT_CONFIG)
         answer = _extract_answer(result.get("messages", []))
         yield {"type": "answer", "content": answer or "无法回答"}
 

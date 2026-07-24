@@ -19,7 +19,13 @@ export function Sidebar({
 }: Props) {
   // 新对话首次发送时会先放一条 message_count=0 的乐观占位，等到流式完成后
   // refreshSessions 再用后端列表覆盖。只要它是当前激活会话就显示，避免问答期间侧栏空白。
-  const activeSessions = sessions.filter(s => s.message_count > 0 || s.id === activeSessionId);
+  // Keep a session in the list if it has messages, is currently active, or
+  // carries a live/terminal status (thinking/done/error). The latter covers
+  // the optimistic placeholder dropped right after sending the first message
+  // (message_count still 0) and sessions still streaming in the background.
+  const activeSessions = sessions.filter(
+    s => s.message_count > 0 || s.id === activeSessionId || s.status || s.unread,
+  );
 
   return (
     <aside className="w-72 bg-white border-r border-slate-200 flex flex-col h-full overflow-hidden">
@@ -91,7 +97,7 @@ export function Sidebar({
                 {session.status === 'thinking' && (
                   <Loader2 size={14} className="flex-shrink-0 animate-spin text-blue-500" />
                 )}
-                {session.status === 'done' && (
+                {session.unread && (
                   <span className="flex-shrink-0 w-2.5 h-2.5 rounded-full bg-green-500" />
                 )}
                 {session.status === 'error' && (

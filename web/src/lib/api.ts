@@ -61,11 +61,13 @@ export async function sendChatStream(
   message: string,
   sessionId: string,
   callbacks: StreamCallbacks,
+  signal?: AbortSignal,
 ): Promise<void> {
   const res = await fetch(`${BASE}/api/chat/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ message, session_id: sessionId }),
+    signal,
   });
 
   if (!res.ok) {

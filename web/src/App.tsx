@@ -44,73 +44,92 @@ function App() {
     deleteSession,
     switchSession,
     clearActiveSession,
-    updateSessionStatus,
-    clearSessionStatus,
-    updateSessionTitle,
-    refreshSessions,
-  } = useSessions(urlSessionId);
+   updateSessionStatus,
+   updateSessionTitle,
+  refreshSessions,
+  markRead,
+  markUnread,
+} = useSessions(urlSessionId);
 
-  const activeSessionIdRef = useRef<string | null>(activeSessionId);
-  activeSessionIdRef.current = activeSessionId;
+ const activeSessionIdRef = useRef<string | null>(activeSessionId);
+ activeSessionIdRef.current = activeSessionId;
 
-  // Local session mirror — updated after stream for immediate metadata display
-  const [localSession, setLocalSession] = useState<Session | null>(null);
+ // Local session mirror — updated after stream for immediate metadata display
+ const [localSession, setLocalSession] = useState<Session | null>(null);
 
-  const {
-    messages,
-    loading,
-    sendMessage,
-    clearMessages,
-    loadMessages,
-    setLoading,
-  } = useChat({
-    activeSessionIdRef,
-    onThinkingStart: (sessionId: string) => {
-      updateSessionStatus(sessionId, 'thinking');
-    },
-    onThinkingEnd: (sessionId: string, status: 'done' | 'error') => {
-      updateSessionStatus(sessionId, status);
-    },
-    onStreamComplete: async (sessionId: string) => {
-      // Refresh session list for sidebar (title, status)
-      refreshSessions();
-      // Fetch updated session to get metadata (tables)
-      try {
-        const s = await fetchSession(sessionId);
-        setLocalSession(s);
-      } catch {
-        // ignore
+ const {
+   messages,
+   loading,
+   sendMessage,
+   clearMessages,
+   loadMessages,
+   setLoading,
+    isStreaming,
+    restoreStream,
+    abortStream,
+ } = useChat({
+   activeSessionIdRef,
+   onThinkingStart: (sessionId: string) => {
+     updateSessionStatus(sessionId, 'thinking');
+   },
+  onThinkingEnd: (sessionId: string, status: 'done' | 'error') => {
+    updateSessionStatus(sessionId, status);
+    // A completed turn that the user is NOT currently viewing gets an unread
+    // dot (ephemeral, client-only). If they're looking at it, it's "read"
+    // immediately and onStreamComplete also clears the flag for safety.
+    if (status === 'done' && sessionId !== activeSessionIdRef.current) {
+      markUnread(sessionId);
+    }
+  },
+   onStreamComplete: async (sessionId: string) => {
+     // Refresh session list for sidebar (title, status)
+     refreshSessions();
+     // Fetch updated session to get metadata (tables)
+     try {
+       const s = await fetchSession(sessionId);
+       setLocalSession(s);
+     } catch {
+       // ignore
+     }
+     // Optimistically update title
+     const lastUser = [...messages].reverse().find(m => m.role === 'user');
+     if (lastUser) {
+       const text = lastUser.content.trim();
+       const title = text.length > 20 ? text.slice(0, 20) + '...' : text;
+       updateSessionTitle(sessionId, title);
+     }
+      // If the completed turn is the one currently in view, mark it read so
+      // the green "unread" dot doesn't linger on the session you're looking at.
+      if (sessionId === activeSessionIdRef.current) {
+        markRead(sessionId);
       }
-      // Optimistically update title
-      const lastUser = [...messages].reverse().find(m => m.role === 'user');
-      if (lastUser) {
-        const text = lastUser.content.trim();
-        const title = text.length > 20 ? text.slice(0, 20) + '...' : text;
-        updateSessionTitle(sessionId, title);
-      }
-    },
-  });
+   },
+ });
 
-  // Load messages when the active session object changes (real switch or clear).
-  // Keying on activeSession identity avoids a race where activeSessionId has
-  // flipped but activeSession still holds the previous (stale) session object.
-  useEffect(() => {
+ // Load messages when the active session object changes (real switch or clear).
+ // Keying on activeSession identity avoids a race where activeSessionId has
+ // flipped but activeSession still holds the previous (stale) session object.
+ useEffect(() => {
     if (activeSession) {
-      loadMessages(activeSession.messages ?? []);
-      setLocalSession(activeSession);
-      if (activeSession.status === 'thinking') {
-        setLoading(true);
-      } else {
-        setLoading(false);
+      // If a turn is still streaming for this session in the background,
+      // restore its live in-progress messages instead of the stale backend
+      // snapshot (which has no partial answer yet). Otherwise loading the
+      // persisted messages would overwrite what's still arriving.
+      if (isStreaming(activeSession.id)) {
+        setLocalSession(activeSession);
+        return;
       }
-      if (activeSession.status === 'done' || activeSession.status === 'error') {
-        clearSessionStatus(activeSession.id);
-      }
-    } else if (!activeSession) {
+     loadMessages(activeSession.messages ?? []);
+     setLocalSession(activeSession);
+     setLoading(activeSession.status === 'thinking');
+      // Viewing a session clears its ephemeral unread dot (if any). Safe to
+      // call unconditionally -- markRead is a no-op when the id isn't flagged.
+      markRead(activeSession.id);
+    } else {
       clearMessages();
       setLocalSession(null);
     }
-  }, [activeSession, loadMessages, clearMessages, setLoading, clearSessionStatus]);
+  }, [activeSession, loadMessages, clearMessages, setLoading, isStreaming, markRead]);
 
   // Sync activeSessionId to URL
   useEffect(() => {
@@ -154,14 +173,25 @@ function App() {
     }
   };
 
-  const handleDeleteSession = (id: string) => {
-    deleteSession(id);
-  };
+ const handleDeleteSession = (id: string) => {
+   // Disconnect any in-flight turn so it doesn't keep streaming into a
+   // deleted session (and avoid a dangling background fetch).
+   abortStream(id);
+   deleteSession(id);
+ };
 
-  const handleSwitchSession = (id: string) => {
-    switchSession(id);
-    setSidebarOpen(false);
-  };
+const handleSwitchSession = (id: string) => {
+  switchSession(id);
+  // Give the switch instant visual feedback. If the target is streaming in
+  // the background, restore its live messages; otherwise blank the view and
+  // show a loader until the full session loads, so the chat never lingers on
+  // the previous session's content while its data is still being fetched.
+  if (!restoreStream(id)) {
+    clearMessages();
+    setLoading(true);
+  }
+  setSidebarOpen(false);
+};
 
   // Use localSession (updated after stream) or activeSession (loaded on switch)
   const insightSession = localSession || activeSession;

@@ -148,6 +148,7 @@ export function useChat({
   }, []);
 
   const loadMessages = useCallback((msgs: ChatMessage[]) => {
+    if (!Array.isArray(msgs)) return;
     setMessages(msgs);
   }, []);
 

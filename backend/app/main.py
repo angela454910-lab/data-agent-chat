@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -117,7 +117,7 @@ async def sessions_list():
 async def session_detail(session_id: str):
     session = get_session(session_id)
     if session is None:
-        return {"error": "session not found"}, 404
+        raise HTTPException(status_code=404, detail="session not found")
     return session
 
 
@@ -125,6 +125,22 @@ async def session_detail(session_id: str):
 async def session_delete(session_id: str):
     deleted = delete_session(session_id)
     return {"deleted": deleted}
+
+@app.get("/{full_path:path}")
+async def spa_catch_all(full_path: str):
+    """SPA fallback: serve index.html for client-side routes (e.g. /session-...).
+    Keeps a browser refresh on a session URL from hitting a blank 404 page.
+    API paths and /assets are matched by their own routes/mounts first.
+    """
+    if full_path.startswith("api/"):
+        raise HTTPException(status_code=404, detail="not found")
+    index_path = WEB_DIST_DIR / "index.html"
+    if index_path.exists():
+        return HTMLResponse(index_path.read_text(encoding="utf-8"))
+    fallback = BACKEND_DIR / "test.html"
+    if fallback.exists():
+        return HTMLResponse(fallback.read_text(encoding="utf-8"))
+    return HTMLResponse("<h1>Data Agent Chat</h1>", status_code=404)
 
 
 @app.post("/api/chat/summary")

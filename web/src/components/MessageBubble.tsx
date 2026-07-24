@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Bot, User, ChevronDown, ChevronRight, Wrench, CheckCircle2, Loader2 } from 'lucide-react';
+import { Bot, User, ChevronDown, ChevronRight, Wrench, CheckCircle2 } from 'lucide-react';
 import type { ChatMessage, ThinkingStep } from '../types';
 import clsx from 'clsx';
 import { StepDetail } from './StepDetail';
+import { useTypewriter } from '../hooks/useTypewriter';
+import { ThinkingStatus } from './ThinkingStatus';
 
 interface Props {
   message: ChatMessage;
@@ -44,7 +46,24 @@ function StepItem({ step }: { step: ThinkingStep }) {
 
 export function MessageBubble({ message, sessionStatus }: Props) {
   const isUser = message.role === 'user';
-  const hasSteps = !isUser && message.steps.length > 0;
+ const hasSteps = !isUser && message.steps.length > 0;
+
+// Agent 回答逐字揭示（无光标）。loading 期间及之后持续打到追上；历史消息瞬显。
+ // 实时消息（挂载时 loading）逐字打出并追赶流式 chunk；历史消息直接显示全文。
+  // 挂载时一次性捕获 loading，避免后续 loading 翻 false 后被打字机当作历史消息整段瞬显。
+  const [isLive] = useState(() => !!message.loading);
+  const { shown: shownContent, done: typingDone } = useTypewriter(message.content, isLive, 10);
+
+  // 打字进行中以 rAF 节流滚到底，避免逐字触发昂贵的平滑滚动
+  const rafRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (isUser || !shownContent || typingDone) return;
+    if (rafRef.current != null) return;
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      document.getElementById('messages-scroll-end')?.scrollIntoView({ block: 'end' });
+    });
+  }, [shownContent, typingDone, isUser]);
 
   if (isUser) {
     return (
@@ -64,17 +83,14 @@ export function MessageBubble({ message, sessionStatus }: Props) {
   return (
     <div className="mb-6">
       {/* Agent header — bot avatar with annotation */}
-      <div className="flex items-center gap-2 mb-2">
+     <div className="flex items-center gap-2 mb-2">
         <span className="ann ann-e ann-blue ann-no-mark" data-note="AI 助手" style={{ display: 'inline-flex' }}>
           <div className="flex-shrink-0 w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center">
             <Bot size={13} className="text-slate-500" />
           </div>
         </span>
-        {message.loading && message.steps.length === 0 && (
-          <Loader2 size={12} className="animate-spin text-slate-400 ml-1" />
-        )}
-        {sessionStatus === 'done' && (
-          <span className="w-2.5 h-2.5 rounded-full bg-green-500 ml-1" />
+        {isLive && !shownContent && (
+          <ThinkingStatus steps={message.steps} />
         )}
         {sessionStatus === 'error' && (
           <span className="w-2.5 h-2.5 rounded-full bg-red-500 ml-1" />
@@ -100,9 +116,6 @@ export function MessageBubble({ message, sessionStatus }: Props) {
                 strokeLinecap="round"
               />
             </svg>
-            {message.loading && (
-              <Loader2 size={10} className="animate-spin text-slate-400" />
-            )}
           </div>
           <div className="space-y-0.5">
             {message.steps.map(step => (
@@ -112,24 +125,12 @@ export function MessageBubble({ message, sessionStatus }: Props) {
         </div>
       )}
 
-      {/* Loading with no steps */}
-      {message.loading && message.steps.length === 0 && (
-        <div className="flex items-center gap-2 mb-2">
-          <div className="flex gap-1">
-            <span className="w-1.5 h-1.5 bg-slate-300 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-            <span className="w-1.5 h-1.5 bg-slate-300 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-            <span className="w-1.5 h-1.5 bg-slate-300 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-          </div>
-          <span className="text-sm text-slate-400">Analyzing...</span>
-        </div>
-      )}
-
       {/* Content */}
-      {message.content && (
+      {shownContent && (
         <div className="ml-0 pl-0">
           <div className="markdown-content text-sm text-slate-700">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {message.content}
+              {shownContent}
             </ReactMarkdown>
           </div>
         </div>

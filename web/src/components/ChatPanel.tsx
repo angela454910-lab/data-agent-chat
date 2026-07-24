@@ -117,7 +117,7 @@ export function ChatPanel({ messages, loading, onSend, onMenuClick, sessionStatu
                 />
               </div>
             ))}
-            <div ref={messagesEndRef} />
+            <div id="messages-scroll-end" ref={messagesEndRef} />
           </div>
         )}
       </div>

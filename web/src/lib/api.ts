@@ -25,7 +25,12 @@ export async function fetchSessions(): Promise<SessionSummary[]> {
 export async function fetchSession(id: string): Promise<Session> {
   const res = await fetch(`${BASE}/api/sessions/${id}`);
   if (!res.ok) throw new Error('Failed to fetch session');
-  return res.json();
+  const data = await res.json();
+  // Defensive: a non-object or missing messages would crash the chat view.
+  if (!data || typeof data !== 'object' || !Array.isArray(data.messages)) {
+    throw new Error('Invalid session payload');
+  }
+  return data;
 }
 export async function deleteSessionApi(id: string): Promise<void> {
   const res = await fetch(`${BASE}/api/sessions/${id}`, { method: 'DELETE' });

@@ -37,7 +37,11 @@ export function useRecap(messages: ChatMessage[], input: string): UseRecapResult
   useEffect(() => {
     clearTimer();
     if (!messages.length) {
+      // 切换到新对话时清空，避免上一段会话的 recap 残留显示。
       lastHandledCountRef.current = 0;
+      setRecap(null);
+      setGenerating(false);
+      generatingRef.current = false;
       return;
     }
     const last = messages[messages.length - 1];

@@ -96,7 +96,7 @@ function App() {
   // flipped but activeSession still holds the previous (stale) session object.
   useEffect(() => {
     if (activeSession) {
-      loadMessages(activeSession.messages);
+      loadMessages(activeSession.messages ?? []);
       setLocalSession(activeSession);
       if (activeSession.status === 'thinking') {
         setLoading(true);

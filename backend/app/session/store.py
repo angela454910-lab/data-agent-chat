@@ -74,6 +74,16 @@ def _db() -> sqlite3.Connection:
 
             CREATE INDEX IF NOT EXISTS idx_messages_session
                 ON messages(session_id, seq);
+            CREATE TABLE IF NOT EXISTS memories (
+                id         TEXT PRIMARY KEY,
+                user_id    TEXT NOT NULL DEFAULT 'default',
+                key        TEXT NOT NULL,
+                content    TEXT NOT NULL,
+                category   TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(user_id, key)
+            );
             """
         )
         conn.commit()
@@ -349,3 +359,59 @@ def _migrate_from_json(db: sqlite3.Connection) -> None:
             continue
         _import_session(db, s)
     db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Long-term memory: per-user facts (preferences, corrections, context)
+# extracted from conversations. Stored in the `memories` table.
+# ---------------------------------------------------------------------------
+
+DEFAULT_USER_ID = "default"
+
+
+def upsert_memory(user_id, key, content, category=None):
+    """Insert or update a memory keyed by (user_id, key)."""
+    now = _now_iso()
+    mem_id = f"{user_id}:{key}"
+    with _lock:
+        db = _db()
+        db.execute(
+            "INSERT INTO memories (id, user_id, key, content, category, "
+            "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(user_id, key) DO UPDATE SET "
+            "content=excluded.content, category=excluded.category, "
+            "updated_at=excluded.updated_at",
+            (mem_id, user_id, key, content, category, now, now),
+        )
+        db.commit()
+    return {"id": mem_id, "user_id": user_id, "key": key,
+            "content": content, "category": category, "updated_at": now}
+
+
+def list_memories(user_id=DEFAULT_USER_ID):
+    """Return all memories for a user, newest-updated first."""
+    with _lock:
+        db = _db()
+        rows = db.execute(
+            "SELECT id, user_id, key, content, category, "
+            "created_at, updated_at FROM memories "
+            "WHERE user_id = ? ORDER BY updated_at DESC",
+            (user_id,),
+        ).fetchall()
+    return [
+        {
+            "id": r["id"], "user_id": r["user_id"], "key": r["key"],
+            "content": r["content"], "category": r["category"],
+            "created_at": r["created_at"], "updated_at": r["updated_at"],
+        }
+        for r in rows
+    ]
+
+
+def delete_memory(mem_id):
+    """Delete a single memory by its id. Returns True if deleted."""
+    with _lock:
+        db = _db()
+        cur = db.execute("DELETE FROM memories WHERE id = ?", (mem_id,))
+        db.commit()
+        return cur.rowcount > 0

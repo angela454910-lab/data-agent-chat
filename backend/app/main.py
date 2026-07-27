@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import asyncio
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -17,6 +18,7 @@ from pydantic import BaseModel
 from app.agents.supervisor import stream_supervisor
 from app.agents.summary import generate_summary
 from app.schema.catalog import get_schema_summary
+from app.memory import extract_and_store_memories
 from app.session.store import (
     get_or_create,
     get_session,
@@ -26,6 +28,8 @@ from app.session.store import (
     update_session,
    update_metadata,
    derive_title,
+    list_memories,
+    delete_memory,
 )
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -128,6 +132,19 @@ async def session_delete(session_id: str):
    deleted = delete_session(session_id)
    return {"deleted": deleted}
 
+@app.get("/api/memories")
+async def memories_list():
+    """List all long-term memories for the default user."""
+    return {"memories": list_memories()}
+
+
+@app.delete("/api/memories/{mem_id}")
+async def memory_delete(mem_id: str):
+    deleted = delete_memory(mem_id)
+    return {"deleted": deleted}
+
+
+
 @app.get("/{full_path:path}")
 async def spa_catch_all(full_path: str):
     """SPA fallback: serve index.html for client-side routes (e.g. /session-...).
@@ -222,6 +239,11 @@ async def chat_stream(request: ChatStreamRequest):
                 update_session(session_id, updates)
 
             yield "data: [DONE]\n\n"
+            # Background memory extraction: fire-and-forget. Failures are
+            # swallowed inside the extractor, so this never affects the chat.
+            asyncio.create_task(
+                extract_and_store_memories(message, accumulated_answer)
+            )
         except Exception as e:
             if session_id:
                 update_session(session_id, {"status": "error"})

@@ -11,6 +11,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from app.agents.business_knowledge import business_knowledge_agent
 from app.agents.data_analysis import data_analysis_agent
 from app.llm import get_chat_model
+from app.session.store import list_memories, DEFAULT_USER_ID
 
 
 class AgentState(TypedDict):
@@ -143,6 +144,28 @@ def _extract_tool_output(raw_output) -> str:
     if isinstance(raw_output, dict):
         return json.dumps(raw_output, ensure_ascii=False, indent=2)
     return str(raw_output)
+def _build_memory_block(user_id: str = DEFAULT_USER_ID) -> str:
+    """Return a long-term-memory prefix for the user, or '' if none stored."""
+    try:
+        memories = list_memories(user_id)
+    except Exception:
+        return ""
+    if not memories:
+        return ""
+    lines = "\n".join(f"- {m['content']}" for m in memories)
+    return (
+        "以下是关于该用户的长期记忆（偏好、口径纠正、背景），"
+        "回答时请优先遵守：\n" + lines
+    )
+
+
+def _with_memory(text: str, block: str | None = None) -> str:
+    """Prepend the user's memory block to a message, if any memories exist."""
+    if block is None:
+        block = _build_memory_block()
+    if not block:
+        return text
+    return f"{block}\n\n{text}"
 
 
 async def invoke_supervisor(message: str) -> dict:
@@ -155,10 +178,13 @@ async def invoke_supervisor(message: str) -> dict:
     if agent_name == "out_of_scope":
         return {"answer": OUT_OF_SCOPE_MESSAGE}
 
+    # Memory is relevant only for data analysis; skip for knowledge/greetings.
+    memory_block = _build_memory_block() if agent_name in ("data_analysis", "both") else ""
+
     try:
         if agent_name == "both":
             biz_state = {
-                "messages": [HumanMessage(content=message)],
+                "messages": [HumanMessage(content=_with_memory(message, memory_block))],
                 "next_agent": "business_knowledge",
             }
             biz_result = _retry_sync(business_knowledge_agent.invoke, biz_state, config=AGENT_CONFIG)
@@ -166,7 +192,7 @@ async def invoke_supervisor(message: str) -> dict:
 
             context_prefix = f"以下是相关的业务知识背景，请在分析时参考：\n{biz_answer}\n\n用户问题：{message}"
             data_state = {
-                "messages": [HumanMessage(content=context_prefix)],
+                "messages": [HumanMessage(content=_with_memory(context_prefix, memory_block))],
                 "next_agent": "data_analysis",
             }
             data_result = _retry_sync(data_analysis_agent.invoke, data_state, config=AGENT_CONFIG)
@@ -174,7 +200,7 @@ async def invoke_supervisor(message: str) -> dict:
             return {"answer": answer or "无法回答这个问题"}
 
         initial_state = {
-            "messages": [HumanMessage(content=message)],
+            "messages": [HumanMessage(content=_with_memory(message, memory_block))],
             "next_agent": agent_name,
         }
 
@@ -203,9 +229,12 @@ async def stream_supervisor(message: str) -> AsyncGenerator[dict, None]:
         yield {"type": "answer", "content": OUT_OF_SCOPE_MESSAGE}
         return
 
+    # Memory is relevant only for data analysis; skip for knowledge/greetings.
+    memory_block = _build_memory_block() if agent_name in ("data_analysis", "both") else ""
+
     if agent_name == "both":
         biz_state = {
-            "messages": [HumanMessage(content=message)],
+            "messages": [HumanMessage(content=_with_memory(message, memory_block))],
             "next_agent": "business_knowledge",
         }
         biz_answer = ""
@@ -223,7 +252,7 @@ async def stream_supervisor(message: str) -> AsyncGenerator[dict, None]:
 
         context_prefix = f"以下是相关的业务知识背景，请在分析时参考：\n{biz_answer}\n\n用户问题：{message}"
         data_state = {
-            "messages": [HumanMessage(content=context_prefix)],
+            "messages": [HumanMessage(content=_with_memory(context_prefix, memory_block))],
             "next_agent": "data_analysis",
         }
 
@@ -263,7 +292,7 @@ async def stream_supervisor(message: str) -> AsyncGenerator[dict, None]:
         return
 
     initial_state = {
-        "messages": [HumanMessage(content=message)],
+        "messages": [HumanMessage(content=_with_memory(message, memory_block))],
         "next_agent": agent_name,
     }
     agent = data_analysis_agent if agent_name == "data_analysis" else business_knowledge_agent

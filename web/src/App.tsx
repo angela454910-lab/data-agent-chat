@@ -4,6 +4,7 @@ import { ChatPanel } from './components/ChatPanel';
 import { InsightPanel } from './components/InsightPanel';
 import { useChat } from './hooks/useChat';
 import { useSessions } from './hooks/useSessions';
+import { useMemories } from './hooks/useMemories';
 import { fetchSession } from './lib/api';
 import type { Session } from './types';
 import { PanelRightOpen, PanelRightClose } from 'lucide-react';
@@ -51,6 +52,8 @@ function App() {
   markUnread,
 } = useSessions(urlSessionId);
 
+  const { memories, refresh: refreshMemories, remove: deleteMemory } = useMemories();
+
  const activeSessionIdRef = useRef<string | null>(activeSessionId);
  activeSessionIdRef.current = activeSessionId;
 
@@ -84,6 +87,9 @@ function App() {
    onStreamComplete: async (sessionId: string) => {
      // Refresh session list for sidebar (title, status)
      refreshSessions();
+     // Memory extraction runs as a background task after the answer lands;
+     // give it a moment then refresh the panel so new memories surface.
+     setTimeout(() => { refreshMemories(); }, 3000);
      // Fetch updated session to get metadata (tables)
      try {
        const s = await fetchSession(sessionId);
@@ -258,6 +264,8 @@ const handleSwitchSession = (id: string) => {
             messages={messages}
             isOpen={insightOpen}
             onToggle={() => setInsightOpen(false)}
+            memories={memories}
+            onDeleteMemory={deleteMemory}
           />
         </div>
       )}

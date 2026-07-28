@@ -63,3 +63,13 @@ export interface SessionSummary {
   // (no first message sent yet, backend doesn't know about it)
   local?: boolean;
 }
+
+export type MemoryCategory = 'preference' | 'correction' | 'context' | string;
+
+export interface Memory {
+  id: string;
+  key: string;
+  content: string;
+  category: MemoryCategory;
+  updated_at: string;
+}

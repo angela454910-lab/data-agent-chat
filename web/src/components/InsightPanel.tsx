@@ -1,14 +1,16 @@
-import { X, BarChart3, Hash, Database, FileText, Table2 } from 'lucide-react';
-import type { Session, ChatMessage } from '../types';
+import { X, BarChart3, Hash, Database, FileText, Table2, Brain, Trash2 } from 'lucide-react';
+import type { Session, ChatMessage, Memory } from '../types';
 
 interface Props {
   session: Session | null;
   messages: ChatMessage[];
   isOpen: boolean;
   onToggle: () => void;
+  memories: Memory[];
+  onDeleteMemory: (id: string) => void;
 }
 
-export function InsightPanel({ session, messages, onToggle }: Props) {
+export function InsightPanel({ session, messages, onToggle, memories, onDeleteMemory }: Props) {
   const metadata = session?.metadata;
   const tables = metadata?.tables ?? [];
 
@@ -36,17 +38,56 @@ export function InsightPanel({ session, messages, onToggle }: Props) {
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 min-h-0 sidebar-scrollbar">
-        {!hasData ? (
-          <div className="flex flex-col items-center justify-center h-full text-center">
-            <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center mb-3">
-              <BarChart3 size={20} className="text-slate-400" />
+        <div className="space-y-5">
+          {/* Agent Memory */}
+          <div>
+            <div className="flex items-center gap-1.5 mb-2">
+              <Brain size={13} className="text-purple-500" />
+              <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Agent 记忆</h3>
             </div>
-            <p className="text-sm text-slate-500">
-              开始对话后，会话概览将在此显示
-            </p>
+            {memories.length > 0 ? (
+              <div className="space-y-1.5">
+                {memories.map(m => {
+                  const badge = categoryBadge(m.category);
+                  return (
+                    <div
+                      key={m.id}
+                      className="group flex items-start gap-2 px-2.5 py-1.5 rounded-md bg-slate-50 border border-slate-100"
+                    >
+                      <span className={`flex-shrink-0 mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium border ${badge.cls}`}>
+                        {badge.label}
+                      </span>
+                      <span className="flex-1 text-xs text-slate-700 leading-relaxed">{m.content}</span>
+                      <button
+                        onClick={() => onDeleteMemory(m.id)}
+                        className="flex-shrink-0 opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition-colors"
+                        title="删除该记忆"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400 bg-slate-50 rounded-lg p-2.5 border border-slate-200">
+                Agent 还没有记住你的偏好，对话中表达的偏好会自动记录于此
+              </p>
+            )}
           </div>
-        ) : (
-          <div className="space-y-5">
+
+          {!hasData ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center mb-3">
+                <BarChart3 size={20} className="text-slate-400" />
+              </div>
+              <p className="text-sm text-slate-500">
+                开始对话后，会话概览将在此显示
+              </p>
+            </div>
+          ) : (
+            <>
+
             {/* Tables Used */}
             <div>
               <div className="flex items-center gap-1.5 mb-2">
@@ -114,9 +155,23 @@ export function InsightPanel({ session, messages, onToggle }: Props) {
                 </div>
               </div>
             )}
-          </div>
-        )}
+            </>
+          )}
+        </div>
       </div>
     </aside>
   );
+}
+
+function categoryBadge(category: string): { label: string; cls: string } {
+  switch (category) {
+    case 'preference':
+      return { label: '偏好', cls: 'bg-blue-50 text-blue-600 border-blue-100' };
+    case 'correction':
+      return { label: '纠正', cls: 'bg-amber-50 text-amber-600 border-amber-100' };
+    case 'context':
+      return { label: '背景', cls: 'bg-slate-100 text-slate-600 border-slate-200' };
+    default:
+      return { label: '其他', cls: 'bg-slate-100 text-slate-600 border-slate-200' };
+  }
 }

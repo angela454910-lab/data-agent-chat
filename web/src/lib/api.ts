@@ -1,4 +1,4 @@
-import type { SchemaTable, HealthResponse, ThinkingStep, Session, SessionSummary, ChatMessage } from '../types';
+import type { SchemaTable, HealthResponse, ThinkingStep, Session, SessionSummary, ChatMessage, Memory } from '../types';
 
 const BASE = '';
 
@@ -35,6 +35,18 @@ export async function fetchSession(id: string): Promise<Session> {
 export async function deleteSessionApi(id: string): Promise<void> {
   const res = await fetch(`${BASE}/api/sessions/${id}`, { method: 'DELETE' });
   if (!res.ok) throw new Error('Failed to delete session');
+}
+
+export async function fetchMemories(): Promise<Memory[]> {
+  const res = await fetch(`${BASE}/api/memories`);
+  if (!res.ok) throw new Error('Failed to fetch memories');
+  const data = await res.json();
+  return data.memories ?? [];
+}
+
+export async function deleteMemoryApi(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/memories/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete memory');
 }
 
 export async function generateRecap(messages: ChatMessage[]): Promise<string> {

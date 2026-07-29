@@ -8,85 +8,58 @@
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#e8edf3', 'primaryTextColor': '#1a1a2e', 'primaryBorderColor': '#c8d6e5', 'lineColor': '#8395a7', 'secondaryColor': '#f0f5ff', 'tertiaryColor': '#fff8f0'}}}%%
-flowchart TB
-    subgraph Entry[" "]
-        FastAPI["⚡ FastAPI 入口<br/><i>stream_supervisor()</i>"]
+flowchart LR
+    subgraph MainLoop["🔁 Main Loop · supervisor.py"]
+        direction TB
+        M1["<b>意图分类 + 路由</b><br/>LLM 改写 follow-up<br/>分发到子 Agent"]
+        M2["<b>上下文组装</b><br/>短期记忆 + 长期记忆<br/>注入 prompt"]
+        M3["<b>SSE 事件流</b><br/>tool_call / tool_result<br/>answer 实时回传"]
+        M1 --> M2 --> M3
     end
 
     subgraph Memory["🧠 Memory 层"]
-        direction LR
-        ShortTerm["<b>短期记忆</b><br/>当前会话最近 N 轮对话<br/><i>build_history()</i>"]
-        LongTerm["<b>长期记忆</b><br/>偏好 · 口径纠正 · 角色背景<br/><i>memory/extractor.py</i>"]
-    end
-
-    subgraph MainLoop["🔁 Main Loop · supervisor.py"]
-        direction LR
-        Intent["<b>意图分类</b><br/>classify_intent()<br/>LLM 改写 follow-up + 路由"]
-        Context["<b>上下文组装</b><br/>_build_memory_block()<br/>_compose_question()"]
-        Dispatch["<b>路由分发</b><br/>data_analysis<br/>business_knowledge<br/>both · out_of_scope"]
+        direction TB
+        N1["<b>短期记忆</b><br/>当前会话最近 N 轮对话<br/><i>build_history()</i>"]
+        N2["<b>长期记忆</b><br/>偏好 · 口径纠正 · 角色背景<br/><i>memory/extractor.py</i>"]
     end
 
     subgraph Agent["🤖 Agent 层"]
-        direction LR
-        DA["<b>Data Analysis Agent</b><br/>deepagents<br/>LLM 驱动 6 个 Tool"]
-        BK["<b>Business Knowledge Agent</b><br/>deepagents<br/>LLM + 8 篇知识文档"]
-        Summary["<b>Summary Agent</b><br/>会话总结 · 2-3 句"]
+        direction TB
+        A1["<b>Data Analysis Agent</b><br/>deepagents<br/>LLM 驱动 6 个 Tool 查询数据"]
+        A2["<b>Business Knowledge Agent</b><br/>deepagents<br/>LLM + 8 篇知识文档"]
+        A3["<b>Summary Agent</b><br/>会话总结 · 2-3 句"]
     end
 
     subgraph Tool["🔧 Tool 层"]
-        direction LR
-        Tools["<b>6 个 LangChain Tool</b><br/>list_tables<br/>describe_table<br/>query_data<br/>aggregate_data<br/>join_and_query<br/>schema_overview"]
-        Data["<b>Mock Data</b><br/>pandas DataFrame<br/>orders · users<br/>channels · products"]
-        Schema["<b>Schema Catalog</b><br/>表定义 · 字段别名<br/>指标字典"]
+        direction TB
+        T1["<b>6 个 LangChain Tool</b><br/>list_tables · describe_table<br/>query_data · aggregate_data<br/>join_and_query · schema_overview"]
+        T2["<b>Mock Data</b><br/>pandas DataFrame<br/>orders · users · channels · products"]
+        T3["<b>Schema Catalog</b><br/>表定义 · 字段别名 · 指标字典"]
     end
 
-    subgraph Store["💾 持久化 · SQLite (chat.db)"]
-        direction LR
-        Sessions["<b>sessions</b><br/>会话元数据<br/>标题 · 状态 · 时间"]
-        Messages["<b>messages</b><br/>对话消息<br/>content · steps · timestamp"]
-        Memories["<b>memories</b><br/>长期记忆条目<br/>key · content · category"]
+    subgraph Store["💾 持久化 · SQLite"]
+        direction TB
+        S1["<b>sessions</b><br/>会话元数据"]
+        S2["<b>messages</b><br/>对话消息 + tool steps"]
+        S3["<b>memories</b><br/>长期记忆"]
     end
 
-    subgraph External[" "]
-        LLM["🌐 OpenAI 兼容 API<br/>ChatOpenAI<br/>temperature · max_retries"]
-    end
+    LLM["🌐 OpenAI 兼容 API<br/>ChatOpenAI"]
 
-    Entry -->|"用户消息 + session_id"| MainLoop
-    ShortTerm -.->|"读取"| Messages
-    LongTerm -.->|"读取"| Memories
+    MainLoop -->|"编排调度"| Agent
     Memory -->|"注入上下文"| MainLoop
+    Agent -->|"调用工具"| Tool
+    MainLoop -->|"读写"| Store
+    Memory -->|"读写"| Store
+    MainLoop -.-> LLM
+    Agent -.-> LLM
+    Memory -.-> LLM
 
-    Intent --> Context
-    Context --> Dispatch
-
-    Dispatch -->|"data_analysis / both"| DA
-    Dispatch -->|"business_knowledge / both"| BK
-    Dispatch -->|"out_of_scope"| Entry
-
-    DA -->|"调用"| Tools
-    Tools -->|"查询"| Data
-    Tools -->|"读取结构"| Schema
-
-    DA -.->|"LLM 推理"| LLM
-    BK -.->|"LLM 推理"| LLM
-    Intent -.->|"LLM 分类"| LLM
-    Summary -.->|"LLM 总结"| LLM
-
-    MainLoop -->|"SSE 事件流"| Entry
-    Entry -->|"持久化"| Messages
-    Entry -->|"更新"| Sessions
-
-    Entry -->|"异步触发"| LongTerm
-    LongTerm -.->|"LLM 提取"| LLM
-    LongTerm -->|"写入"| Memories
-
-    style Entry fill:#f0f4ff,stroke:#4a6fa5,stroke-width:2px
-    style Memory fill:#f5f0ff,stroke:#7c5cbf,stroke-width:2px
     style MainLoop fill:#fff8f0,stroke:#d4850a,stroke-width:2px
+    style Memory fill:#f5f0ff,stroke:#7c5cbf,stroke-width:2px
     style Agent fill:#f0fff4,stroke:#2d8a4e,stroke-width:2px
     style Tool fill:#fff5f0,stroke:#c7502b,stroke-width:2px
     style Store fill:#f8f8f8,stroke:#555,stroke-width:2px
-    style External fill:#fafafa,stroke:#999,stroke-width:1px
 ```
 
 **核心交互流程：**

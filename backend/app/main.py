@@ -176,8 +176,12 @@ async def chat_stream(request: ChatStreamRequest):
     session_id = request.session_id
     message = request.message.strip()
 
+    # Grab the session's existing messages BEFORE appending the current one,
+    # so the supervisor can resolve follow-ups ("针对这个结论...") against
+    # previous turns and inject them as conversation history.
+    history: list[dict] = []
     if session_id:
-        get_or_create(session_id)
+        history = get_or_create(session_id).get("messages", [])
         append_message(session_id, {
             "id": f"msg-{int(time.time())}-u",
             "role": "user",
@@ -194,7 +198,7 @@ async def chat_stream(request: ChatStreamRequest):
         step_counter = 0
 
         try:
-            async for event in stream_supervisor(message):
+            async for event in stream_supervisor(message, history):
                 if event.get("type") in ("answer", "sub_answer"):
                     accumulated_answer += event.get("content", "")
                 elif event.get("type") == "tool_call":

@@ -257,11 +257,13 @@ async def stream_supervisor(message: str) -> AsyncGenerator[dict, None]:
         }
 
         try:
+            answer = ""
             async for event in _retry_async(data_analysis_agent.astream_events, data_state, version="v2", config=AGENT_CONFIG):
                 kind = event.get("event", "")
                 if kind == "on_tool_start":
                     tool_name = event.get("name", "unknown")
                     tool_input = event.get("data", {}).get("input", {})
+                    answer = ""  # discard pre-tool model chatter; keep only the final answer
                     yield {
                         "type": "tool_call",
                         "tool": tool_name,
@@ -278,13 +280,14 @@ async def stream_supervisor(message: str) -> AsyncGenerator[dict, None]:
                         "tool": tool_name,
                         "output": output_str
                     }
+                elif kind == "on_chat_model_stream":
+                    chunk = event.get("data", {}).get("chunk")
+                    if chunk and hasattr(chunk, "content") and chunk.content:
+                        answer += chunk.content
 
-            # Sync invoke that re-runs the agent to extract the final answer;
-            # off-loaded so it doesn't block the event loop mid-request.
-            data_result = await asyncio.to_thread(
-                data_analysis_agent.invoke, data_state, config=AGENT_CONFIG
-            )
-            answer = _extract_answer(data_result.get("messages", []))
+            # The final answer is whatever the model streamed after the last
+            # tool call; the invoke re-run is no longer needed.
+            print(f"[Supervisor] answer collected from on_chat_model_stream events ({len(answer)} chars), invoke re-run skipped", flush=True)
             yield {"type": "answer", "content": answer or "无法回答"}
 
         except Exception as e:
@@ -298,12 +301,14 @@ async def stream_supervisor(message: str) -> AsyncGenerator[dict, None]:
     agent = data_analysis_agent if agent_name == "data_analysis" else business_knowledge_agent
 
     try:
+        answer = ""
         async for event in _retry_async(agent.astream_events, initial_state, version="v2", config=AGENT_CONFIG):
             kind = event.get("event", "")
 
             if kind == "on_tool_start":
                 tool_name = event.get("name", "unknown")
                 tool_input = event.get("data", {}).get("input", {})
+                answer = ""  # discard pre-tool model chatter; keep only the final answer
                 yield {
                     "type": "tool_call",
                     "tool": tool_name,
@@ -321,11 +326,13 @@ async def stream_supervisor(message: str) -> AsyncGenerator[dict, None]:
                     "tool": tool_name,
                     "output": output_str
                 }
+            elif kind == "on_chat_model_stream":
+                chunk = event.get("data", {}).get("chunk")
+                if chunk and hasattr(chunk, "content") and chunk.content:
+                    answer += chunk.content
 
-        # Sync invoke that re-runs the agent to extract the final answer;
-        # off-loaded so it doesn't block the event loop mid-request.
-        result = await asyncio.to_thread(agent.invoke, initial_state, config=AGENT_CONFIG)
-        answer = _extract_answer(result.get("messages", []))
+        # The final answer is whatever the model streamed after the last tool
+        # call; the invoke re-run is no longer needed.
         yield {"type": "answer", "content": answer or "无法回答"}
 
     except Exception as e:

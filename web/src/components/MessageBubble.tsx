@@ -92,9 +92,6 @@ export function MessageBubble({ message, sessionStatus }: Props) {
         {isLive && !shownContent && (
           <ThinkingStatus steps={message.steps} />
         )}
-        {sessionStatus === 'error' && (
-          <span className="w-2.5 h-2.5 rounded-full bg-red-500 ml-1" />
-        )}
       </div>
 
       {/* Thinking chain — annotation style */}

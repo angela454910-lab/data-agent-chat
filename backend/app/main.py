@@ -242,7 +242,7 @@ async def chat_stream(request: ChatStreamRequest):
             # Background memory extraction: fire-and-forget. Failures are
             # swallowed inside the extractor, so this never affects the chat.
             asyncio.create_task(
-                extract_and_store_memories(message, accumulated_answer)
+                asyncio.to_thread(extract_and_store_memories, message, accumulated_answer)
             )
         except Exception as e:
             if session_id:

@@ -36,7 +36,9 @@ SYSTEM_PROMPT = """你是一个专业的数据分析师 Agent。你的职责是�
 - 转化率 = 已转化用户数 / 总用户数
 """
 
-model = get_chat_model(temperature=0.1)
+# streaming=True so astream_events emits on_chat_model_stream tokens, which the
+# supervisor collects as the final answer instead of re-invoking the agent.
+model = get_chat_model(temperature=0.1, streaming=True)
 data_analysis_agent = create_deep_agent(
     model=model,
     tools=DATA_ANALYSIS_TOOLS,

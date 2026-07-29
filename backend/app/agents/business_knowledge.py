@@ -19,7 +19,9 @@ SYSTEM_PROMPT = """你是一个业务知识专家。你的职责是回答关于�
 4. 如果问题涉及数据分析，建议用户使用数据分析功能
 """.format(knowledge=get_knowledge_text())
 
-model = get_chat_model(temperature=0.1)
+# streaming=True so astream_events emits on_chat_model_stream tokens, which the
+# supervisor collects as the final answer instead of re-invoking the agent.
+model = get_chat_model(temperature=0.1, streaming=True)
 business_knowledge_agent = create_deep_agent(
     model=model,
     tools=[],

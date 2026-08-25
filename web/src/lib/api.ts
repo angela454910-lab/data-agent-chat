@@ -1,4 +1,5 @@
 import type { SchemaTable, HealthResponse, ThinkingStep, Session, SessionSummary, ChatMessage, Memory } from '../types';
+import type { Dataset } from '../types';
 
 const BASE = '';
 
@@ -47,6 +48,32 @@ export async function fetchMemories(): Promise<Memory[]> {
 export async function deleteMemoryApi(id: string): Promise<void> {
   const res = await fetch(`${BASE}/api/memories/${id}`, { method: 'DELETE' });
   if (!res.ok) throw new Error('Failed to delete memory');
+}
+
+export async function uploadDataset(sessionId: string, file: File): Promise<Dataset> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await fetch(`${BASE}/api/sessions/${sessionId}/dataset`, {
+    method: 'POST',
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Upload failed (HTTP ${res.status})`);
+  }
+  return res.json();
+}
+
+export async function fetchDataset(sessionId: string): Promise<Dataset | null> {
+  const res = await fetch(`${BASE}/api/sessions/${sessionId}/dataset`);
+  if (!res.ok) throw new Error('Failed to fetch dataset');
+  const data = await res.json();
+  return data.dataset;
+}
+
+export async function deleteDatasetApi(sessionId: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/sessions/${sessionId}/dataset`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete dataset');
 }
 
 export async function generateRecap(messages: ChatMessage[]): Promise<string> {

@@ -73,3 +73,20 @@ export interface Memory {
   category: MemoryCategory;
   updated_at: string;
 }
+
+export interface DatasetColumn {
+  name: string;
+  type: string;
+  title: string;
+  sample_values: string;
+  null_count: number;
+  unique_count: number;
+}
+
+export interface Dataset {
+  name: string;
+  filename: string;
+  file_type: string;
+  row_count: number;
+  columns: DatasetColumn[];
+}

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import AsyncGenerator
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi import UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -19,6 +20,12 @@ from app.agents.supervisor import stream_supervisor
 from app.agents.summary import generate_summary
 from app.schema.catalog import get_schema_summary
 from app.memory import extract_and_store_memories
+from app.session.dataset import (
+    store_dataset,
+    get_dataset,
+    delete_dataset,
+    dataset_to_dict,
+)
 from app.session.store import (
     get_or_create,
     get_session,
@@ -28,8 +35,8 @@ from app.session.store import (
     update_session,
    update_metadata,
    derive_title,
-    list_memories,
-    delete_memory,
+   list_memories,
+   delete_memory,
 )
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -145,6 +152,63 @@ async def memory_delete(mem_id: str):
 
 
 
+@app.post("/api/sessions/{session_id}/dataset")
+async def upload_dataset(session_id: str, file: UploadFile = File(...)):
+    """Upload an Excel or JSON file as the session's dataset."""
+    import pandas as pd
+    import io
+    import os
+
+    get_or_create(session_id)
+
+    filename = file.filename or "uploaded_data"
+    ext = os.path.splitext(filename)[1].lower()
+    raw = await file.read()
+
+    try:
+        if ext in (".xlsx", ".xls"):
+            df = pd.read_excel(io.BytesIO(raw), engine="openpyxl")
+            file_type = "excel"
+        elif ext == ".json":
+            try:
+                df = pd.read_json(io.BytesIO(raw), orient="records")
+            except ValueError:
+                df = pd.read_json(io.BytesIO(raw))
+            file_type = "json"
+        elif ext == ".csv":
+            df = pd.read_csv(io.BytesIO(raw))
+            file_type = "csv"
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported file type: {ext}. Use .xlsx, .json, or .csv",
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to parse file: {e}")
+
+    if df.empty:
+        raise HTTPException(status_code=400, detail="File contains no data rows")
+
+    entry = store_dataset(session_id, df, filename, file_type)
+    return dataset_to_dict(entry)
+
+
+@app.get("/api/sessions/{session_id}/dataset")
+async def get_session_dataset(session_id: str):
+    entry = get_dataset(session_id)
+    if entry is None:
+        return {"dataset": None}
+    return {"dataset": dataset_to_dict(entry)}
+
+
+@app.delete("/api/sessions/{session_id}/dataset")
+async def delete_session_dataset(session_id: str):
+    deleted = delete_dataset(session_id)
+    return {"deleted": deleted}
+
+
 @app.get("/{full_path:path}")
 async def spa_catch_all(full_path: str):
     """SPA fallback: serve index.html for client-side routes (e.g. /session-...).
@@ -173,6 +237,7 @@ async def chat_summary(request: SummaryRequest):
 
 @app.post("/api/chat/stream")
 async def chat_stream(request: ChatStreamRequest):
+    """Original supervisor-based chat stream (business/data agents)."""
     session_id = request.session_id
     message = request.message.strip()
 
@@ -198,6 +263,9 @@ async def chat_stream(request: ChatStreamRequest):
         step_counter = 0
 
         try:
+            # Pass session_id so the supervisor can route to dataset_analysis
+            # when an uploaded dataset exists, and set the contextvar for
+            # dataset tools to resolve the right DataFrame.
             async for event in stream_supervisor(message, history):
                 if event.get("type") in ("answer", "sub_answer"):
                     accumulated_answer += event.get("content", "")
@@ -251,6 +319,41 @@ async def chat_stream(request: ChatStreamRequest):
         except Exception as e:
             if session_id:
                 update_session(session_id, {"status": "error"})
+            yield f"data: {json.dumps({'type': 'error', 'content': str(e)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+    )
+
+
+class VolcChatRequest(BaseModel):
+    """Request for the standalone Volcengine Doubao chat endpoint."""
+    message: str
+    history: list[dict] = []
+    session_id: str | None = None
+
+
+@app.post("/api/volc/chat/stream")
+async def volc_chat_stream(request: VolcChatRequest):
+    """Standalone chat stream using the Volcengine Ark (Doubao) agent.
+
+    This endpoint is completely independent from the supervisor/data-analysis
+    pipeline. It streams raw Doubao model responses via SSE, using the same
+    event protocol ({type: answer, content: chunk}) so the frontend can reuse
+    its existing streaming infrastructure.
+    """
+    from app.agents.volcengine import stream_volcengine_chat
+
+    message = request.message.strip()
+
+    async def event_generator() -> AsyncGenerator[str, None]:
+        try:
+            async for event in stream_volcengine_chat(message, request.history, request.session_id):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
+        except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(

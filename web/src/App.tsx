@@ -32,10 +32,10 @@ function updateURLSession(sessionId: string | null) {
 }
 
 function App() {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [insightOpen, setInsightOpen] = useState(false);
+ const [sidebarOpen, setSidebarOpen] = useState(false);
+ const [insightOpen, setInsightOpen] = useState(false);
 
-  const urlSessionId = getSessionFromURL();
+ const urlSessionId = getSessionFromURL();
 
   const {
     sessions,
@@ -129,13 +129,13 @@ function App() {
      setLocalSession(activeSession);
      setLoading(activeSession.status === 'thinking');
       // Viewing a session clears its ephemeral unread dot (if any). Safe to
-      // call unconditionally -- markRead is a no-op when the id isn't flagged.
-      markRead(activeSession.id);
-    } else {
-      clearMessages();
-      setLocalSession(null);
-    }
-  }, [activeSession, loadMessages, clearMessages, setLoading, isStreaming, markRead]);
+     // call unconditionally -- markRead is a no-op when the id isn't flagged.
+    markRead(activeSession.id);
+  } else {
+    clearMessages();
+    setLocalSession(null);
+  }
+}, [activeSession, loadMessages, clearMessages, setLoading, isStreaming, markRead]);
 
   // Sync activeSessionId to URL
   useEffect(() => {
@@ -161,14 +161,14 @@ function App() {
       ? activeSession.status
       : undefined;
 
-  const handleNewSession = () => {
-    clearActiveSession();
-    clearMessages();
-    setLocalSession(null);
-    setSidebarOpen(false);
-  };
+ const handleNewSession = () => {
+   clearActiveSession();
+   clearMessages();
+   setLocalSession(null);
+   setSidebarOpen(false);
+};
 
-  const handleSendMessage = (message: string) => {
+ const handleSendMessage = (message: string) => {
     if (!activeSessionId) {
       const newId = createSession();
       setTimeout(() => {

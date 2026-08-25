@@ -276,6 +276,7 @@ async def invoke_supervisor(message: str, history: list[dict] | None = None) -> 
     else:
         memory_block, evidence = "", ""
 
+
     try:
         if agent_name == "both":
             biz_state = {
@@ -299,7 +300,10 @@ async def invoke_supervisor(message: str, history: list[dict] | None = None) -> 
             "next_agent": agent_name,
         }
 
-        agent = data_analysis_agent if agent_name == "data_analysis" else business_knowledge_agent
+        if agent_name == "data_analysis":
+            agent = data_analysis_agent
+        else:
+            agent = business_knowledge_agent
         result = _retry_sync(agent.invoke, initial_state, config=AGENT_CONFIG)
         answer = _extract_answer(result.get("messages", []))
         return {"answer": answer or "无法回答这个问题"}
@@ -337,6 +341,7 @@ async def stream_supervisor(message: str, history: list[dict] | None = None) -> 
         memory_block = _build_memory_block()
     else:
         memory_block, evidence = "", ""
+
 
     if agent_name == "both":
         biz_state = {
@@ -401,10 +406,13 @@ async def stream_supervisor(message: str, history: list[dict] | None = None) -> 
         return
 
     initial_state = {
-        "messages": [*history_msgs, HumanMessage(content=_compose_question(question, memory_block, evidence))],
-        "next_agent": agent_name,
-    }
-    agent = data_analysis_agent if agent_name == "data_analysis" else business_knowledge_agent
+            "messages": [*history_msgs, HumanMessage(content=_compose_question(question, memory_block, evidence))],
+            "next_agent": agent_name,
+        }
+    if agent_name == "data_analysis":
+        agent = data_analysis_agent
+    else:
+        agent = business_knowledge_agent
 
     try:
         answer = ""

@@ -4,8 +4,16 @@ import './index.css'
 import './neat-annotations.css'
 import App from './App.tsx'
 
-createRoot(document.getElementById('root')!).render(
+function renderRoot() {
+  const root = document.getElementById('root')!;
+  root.innerHTML = '';
+  createRoot(root).render(
   <StrictMode>
     <App />
   </StrictMode>,
-)
+  );
+}
+
+renderRoot();
+// Re-render on browser navigation (back/forward).
+window.addEventListener('popstate', renderRoot);

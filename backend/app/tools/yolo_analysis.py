@@ -12,6 +12,7 @@ import re
 from collections import defaultdict
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
+from langchain_core.tools import tool
 
 
 @dataclass
@@ -583,3 +584,28 @@ def analyze_yolo_content(yolo_content: str, confidence_threshold: float = 0.5) -
         "analysis": _to_dict(analysis),
         "raw_boxes": boxes
     }
+
+
+@tool
+def analyze_yolo_results(yolo_content: str, confidence_threshold: float = 0.5) -> str:
+    """Analyze YOLO shelf detection results.
+
+    This tool processes YOLO object detection output from shelf images,
+    providing structured data about product counts, competitor analysis,
+    price tag detection, and layout analysis.
+
+    Args:
+        yolo_content: Raw YOLO detection result string containing boxes array
+        confidence_threshold: Minimum confidence score for valid detections (default: 0.5)
+
+    Returns:
+        JSON string with structured analysis results
+    """
+    try:
+        result = analyze_yolo_content(yolo_content, confidence_threshold)
+        return json.dumps(result, ensure_ascii=False, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
+
+
+YOLO_TOOLS = [analyze_yolo_results]

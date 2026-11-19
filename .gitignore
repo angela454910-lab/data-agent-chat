@@ -15,3 +15,8 @@ backend/data/chat.db-shm
 
 # SOP demo business database journals
 backend/data/sop-demo.db-*
+
+# Application credentials and local runtime configuration
+/backend/.env
+/backend/.env.*
+!/backend/.env.example

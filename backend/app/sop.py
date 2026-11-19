@@ -19,9 +19,11 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+import anyio
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
+from starlette.background import BackgroundTask
 from pydantic import BaseModel, Field
 
 def _browser_origin(request: Request):
@@ -68,6 +70,86 @@ async def _service(method: str, path: str, body: Any = None) -> Any:
     if not res.is_success:
         raise HTTPException(res.status_code, value.get("error", "SopAgent 请求失败"))
     return value
+
+
+def _wants_stream(request: Request) -> bool:
+    for part in request.headers.get("accept", "").split(","):
+        media_type, *params = part.split(";")
+        if media_type.strip().lower() != "text/event-stream":
+            continue
+        quality = "1"
+        for param in params:
+            key, separator, value = param.partition("=")
+            if separator and key.strip().lower() == "q":
+                quality = value.strip().strip('"')
+        try:
+            if 0 < float(quality) <= 1:
+                return True
+        except ValueError:
+            pass
+    return False
+
+
+async def _stream_service(method: str, path: str, body: Any = None):
+    """Relay upstream SSE without buffering or owning the background task.
+
+    Open upstream before returning StreamingResponse so authentication, stale
+    revisions and validation failures remain ordinary HTTP/JSON errors.
+    """
+    base = os.getenv("SOP_AGENT_SERVICE_URL", "http://127.0.0.1:8091").rstrip("/")
+    headers = {**_service_headers(), "Accept": "text/event-stream", "Accept-Encoding": "identity"}
+    client = httpx.AsyncClient(timeout=httpx.Timeout(connect=10, read=45, write=15, pool=10), trust_env=False)
+    try:
+        upstream = await client.send(client.build_request(method, f"{base}/v1/personal-agent{path}",
+                                                          headers=headers, json=body), stream=True)
+    except httpx.HTTPError:
+        await client.aclose()
+        raise HTTPException(503, "SopAgent 进度连接不可用，请检查服务状态") from None
+
+    closed = False
+
+    async def close_upstream():
+        nonlocal closed
+        # Browser disconnect cancels the response generator; still release the
+        # upstream socket instead of leaving a live subscription behind.
+        with anyio.CancelScope(shield=True):
+            if closed:
+                return
+            closed = True
+            try:
+                await upstream.aclose()
+            finally:
+                await client.aclose()
+
+    if not upstream.is_success:
+        try:
+            await upstream.aread()
+            value = upstream.json()
+            message = value.get("error", "SopAgent 请求失败")
+        except (httpx.HTTPError, ValueError, AttributeError):
+            message = "SopAgent 请求失败"
+        finally:
+            await close_upstream()
+        raise HTTPException(upstream.status_code, message)
+    if not upstream.headers.get("content-type", "").lower().startswith("text/event-stream"):
+        await close_upstream()
+        raise HTTPException(502, "SopAgent 未返回进度流，请更新通用服务版本")
+
+    async def relay():
+        try:
+            async for chunk in upstream.aiter_raw():
+                if chunk:
+                    yield chunk
+        except httpx.HTTPError:
+            # EOF before a stop event tells the client to reconnect via GET
+            # events. Never replay the POST that may already have created work.
+            return
+        finally:
+            await close_upstream()
+
+    return StreamingResponse(relay(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
+                             background=BackgroundTask(close_upstream))
 
 
 def _gateway_scope(request: Request) -> tuple[str, str]:
@@ -322,13 +404,16 @@ async def tasks():
 
 
 @router.post("/tasks")
-async def create_task(body: TaskInput):
+async def create_task(body: TaskInput, request: Request):
     context: dict = {"businessMode": "simulated", "locale": "zh-CN"}
     if body.attachmentId:
         attachment = await asyncio.to_thread(_store().attachment, _scope(), body.attachmentId)
         context["attachmentId"] = body.attachmentId
         context["attachmentName"] = attachment["name"]
-    return await _service("POST", "/tasks", {"request": body.request, "context": context, "sopId": body.sopId or ""})
+    payload = {"request": body.request, "context": context, "sopId": body.sopId or ""}
+    if _wants_stream(request):
+        return await _stream_service("POST", "/tasks", payload)
+    return await _service("POST", "/tasks", payload)
 
 
 @router.get("/tasks/{task_id}")
@@ -336,13 +421,22 @@ async def task(task_id: str):
     return await _service("GET", "/tasks/" + _valid_id(task_id))
 
 
+@router.get("/tasks/{task_id}/events")
+async def task_events(task_id: str):
+    return await _stream_service("GET", "/tasks/" + _valid_id(task_id) + "/events")
+
+
 @router.post("/tasks/{task_id}/confirm")
-async def confirm(task_id: str, body: ConfirmInput):
+async def confirm(task_id: str, body: ConfirmInput, request: Request):
+    if _wants_stream(request):
+        return await _stream_service("POST", "/tasks/" + _valid_id(task_id) + "/confirm", body.model_dump())
     return await _service("POST", "/tasks/" + _valid_id(task_id) + "/confirm", body.model_dump())
 
 
 @router.post("/tasks/{task_id}/feedback")
-async def feedback(task_id: str, body: FeedbackInput):
+async def feedback(task_id: str, body: FeedbackInput, request: Request):
+    if _wants_stream(request):
+        return await _stream_service("POST", "/tasks/" + _valid_id(task_id) + "/feedback", body.model_dump())
     return await _service("POST", "/tasks/" + _valid_id(task_id) + "/feedback", body.model_dump())
 
 

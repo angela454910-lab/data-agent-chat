@@ -30,6 +30,8 @@ import {
   BookOpen,
 } from "lucide-react";
 import { isTaskActive, sopApi } from "./sop-api";
+import { useSopTaskStream } from "./useSopTaskStream";
+import { SopTaskRecoveryError } from "./sop-task-stream";
 import type {
   AgentRun,
   AgentSpec,
@@ -477,11 +479,6 @@ export default function SopWorkspace() {
   const [tasks, setTasks] = useState<AgentTask[]>([]);
   const [sops, setSops] = useState<SavedSop[]>([]);
   const [capabilities, setCapabilities] = useState<Capability[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(() =>
-    new URLSearchParams(window.location.search).get("task"),
-  );
-  const [task, setTask] = useState<AgentTask | null>(null);
-  const [taskLoading, setTaskLoading] = useState(false);
   const [request, setRequest] = useState("");
   const [feedback, setFeedback] = useState("");
   const [attachment, setAttachment] = useState<Attachment | null>(null);
@@ -493,13 +490,10 @@ export default function SopWorkspace() {
     "checking",
   );
   const [sidebarTab, setSidebarTab] = useState<"tasks" | "sops">("tasks");
-  const [refreshKey, setRefreshKey] = useState(0);
   const [resourcesLoading, setResourcesLoading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const requestRef = useRef<HTMLTextAreaElement>(null);
   const mutationRef = useRef<AbortController | null>(null);
-  const activeIdRef = useRef(activeId);
-  activeIdRef.current = activeId;
   const mountedRef = useRef(true);
   const resourceGenerationRef = useRef(0);
 
@@ -522,12 +516,17 @@ export default function SopWorkspace() {
     if (taskResult.status === "fulfilled")
       setTasks((current) => {
         const known = new Map(current.map((item) => [item.id, item]));
-        return (taskResult.value.tasks ?? []).map((item) => {
+        for (const item of taskResult.value.tasks ?? []) {
           const existing = known.get(item.id);
-          return existing && existing.revision > item.revision
-            ? existing
-            : item;
-        });
+          if (!existing || item.revision >= existing.revision) {
+            known.set(item.id, item);
+          }
+        }
+        // A list requested before the stream's first snapshot may not yet
+        // include its new task. Retain those live entries and newer revisions.
+        return [...known.values()].sort((left, right) =>
+          right.createdAt.localeCompare(left.createdAt),
+        );
       });
     if (sopResult.status === "fulfilled") setSops(sopResult.value.sops ?? []);
     if (capabilityResult.status === "fulfilled")
@@ -550,6 +549,30 @@ export default function SopWorkspace() {
     setResourcesLoading(false);
   }, []);
 
+  const {
+    activeId,
+    task,
+    taskLoading,
+    connectionIssue,
+    reconnecting,
+    stream,
+  } = useSopTaskStream({
+    onTask: (next) =>
+      setTasks((current) => {
+        const existing = current.find((item) => item.id === next.id);
+        if (existing && existing.revision > next.revision) return current;
+        return [next, ...current.filter((item) => item.id !== next.id)].sort(
+          (left, right) => right.createdAt.localeCompare(left.createdAt),
+        );
+      }),
+    onSettled: () => {
+      void refreshResources();
+    },
+    onUncertain: () => {
+      void refreshResources();
+    },
+  });
+
   useEffect(() => {
     mountedRef.current = true;
     const controller = new AbortController();
@@ -561,74 +584,12 @@ export default function SopWorkspace() {
     };
   }, [refreshResources]);
 
-  useEffect(() => {
-    const onPopState = () =>
-      setActiveId(new URLSearchParams(window.location.search).get("task"));
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
-  }, []);
-
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    if (activeId) url.searchParams.set("task", activeId);
-    else url.searchParams.delete("task");
-    window.history.replaceState(null, "", url);
-  }, [activeId]);
-
-  useEffect(() => {
-    setTask(null);
+  const selectTask = (id: string | null) => {
+    mutationRef.current?.abort();
+    setPending(null);
     setFeedback("");
-    if (!activeId) {
-      setTaskLoading(false);
-      return;
-    }
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let previousStatus: string | undefined;
-    let attempts = 0;
-    setTaskLoading(true);
-    const load = async () => {
-      try {
-        const next = await sopApi.task(activeId, controller.signal);
-        if (controller.signal.aborted) return;
-        attempts = 0;
-        setTask(next);
-        setTaskLoading(false);
-        setTasks((current) =>
-          [next, ...current.filter((item) => item.id !== next.id)].sort(
-            (left, right) => right.createdAt.localeCompare(left.createdAt),
-          ),
-        );
-        if (
-          previousStatus &&
-          previousStatus !== next.status &&
-          !isTaskActive(next.status)
-        )
-          void refreshResources(controller.signal);
-        previousStatus = next.status;
-        if (isTaskActive(next.status))
-          timer = setTimeout(() => {
-            void load();
-          }, 1500);
-      } catch (cause) {
-        if (controller.signal.aborted) return;
-        setTaskLoading(false);
-        setError(errorText(cause));
-        // Short reconnect window while a task is running; settled tasks have no poller.
-        if (isTaskActive(previousStatus) && attempts < 3) {
-          attempts += 1;
-          timer = setTimeout(() => {
-            void load();
-          }, attempts * 2000);
-        }
-      }
-    };
-    void load();
-    return () => {
-      controller.abort();
-      if (timer) clearTimeout(timer);
-    };
-  }, [activeId, refreshKey, refreshResources]);
+    stream.select(id);
+  };
 
   const beginMutation = (name: string): AbortController => {
     mutationRef.current?.abort();
@@ -653,61 +614,55 @@ export default function SopWorkspace() {
     event.preventDefault();
     if (!request.trim() || pending) return;
     const controller = beginMutation("create");
-    const initialSelection = activeIdRef.current;
     try {
-      const next = await sopApi.create(
-        {
-          request: request.trim(),
-          ...(attachment ? { attachmentId: attachment.id } : {}),
-          ...(selectedSopId ? { sopId: selectedSopId } : {}),
-        },
-        controller.signal,
-      );
+      // The mutation owns its response stream. Receiving the first snapshot
+      // updates the selected task without opening a second GET subscription.
+      await stream.create({
+        request: request.trim(),
+        ...(attachment ? { attachmentId: attachment.id } : {}),
+        ...(selectedSopId ? { sopId: selectedSopId } : {}),
+      });
       if (controller.signal.aborted || !mountedRef.current) return;
-      setTasks((current) => [
-        next,
-        ...current.filter((item) => item.id !== next.id),
-      ]);
-      if (activeIdRef.current === initialSelection) {
-        setActiveId(next.id);
-        setTask(next);
-      }
       setRequest("");
       setAttachment(null);
       setSelectedSopId("");
-      void refreshResources(controller.signal);
     } catch (cause) {
-      if (!controller.signal.aborted) setError(errorText(cause));
+      if (
+        !controller.signal.aborted &&
+        !(cause instanceof SopTaskRecoveryError) &&
+        !(cause instanceof Error && cause.name === "AbortError")
+      )
+        setError(errorText(cause));
     } finally {
       finishMutation(controller);
     }
   };
 
   const mutateTask = async (action: "confirm" | "feedback") => {
-    if (!task || pending || task.status !== "awaiting_confirmation") return;
+    if (
+      !task ||
+      pending ||
+      connectionIssue ||
+      task.status !== "awaiting_confirmation"
+    )
+      return;
     if (action === "feedback" && !feedback.trim()) return;
     if (action === "confirm" && questions.length > 0) return;
     const target = task;
     const controller = beginMutation(action);
     try {
-      const next =
-        action === "confirm"
-          ? await sopApi.confirm(target, controller.signal)
-          : await sopApi.feedback(target, feedback.trim(), controller.signal);
+      if (action === "confirm") await stream.confirm(target);
+      else await stream.feedback(target, feedback.trim());
       if (controller.signal.aborted || !mountedRef.current) return;
-      if (activeIdRef.current === target.id) {
-        setTask(next);
-        setFeedback("");
-        setRefreshKey((value) => value + 1);
-      }
-      void refreshResources(controller.signal);
+      setFeedback("");
     } catch (cause) {
-      if (!controller.signal.aborted) {
+      if (
+        !controller.signal.aborted &&
+        !(cause instanceof SopTaskRecoveryError) &&
+        !(cause instanceof Error && cause.name === "AbortError")
+      )
         setError(errorText(cause));
-        // A stale approval is never retried. Load the new revision for review.
-        if (activeIdRef.current === target.id)
-          setRefreshKey((value) => value + 1);
-      }
+      // Recovery only reconnects to GET /events; mutation POSTs are never replayed.
     } finally {
       finishMutation(controller);
     }
@@ -754,8 +709,7 @@ export default function SopWorkspace() {
   };
 
   const newTask = (sop?: SavedSop) => {
-    setActiveId(null);
-    setTask(null);
+    selectTask(null);
     setFeedback("");
     setRequest("");
     setAttachment(null);
@@ -845,7 +799,7 @@ export default function SopWorkspace() {
                   onClick={() => {
                     setError("");
                     setNotice("");
-                    setActiveId(item.id);
+                    selectTask(item.id);
                   }}
                 >
                   <span className="sop-history-title">
@@ -944,7 +898,7 @@ export default function SopWorkspace() {
           <select
             aria-label="选择历史任务"
             value={activeId || ""}
-            onChange={(event) => setActiveId(event.target.value || null)}
+            onChange={(event) => selectTask(event.target.value || null)}
           >
             <option value="">历史任务</option>
             {tasks.map((item) => (
@@ -1013,6 +967,24 @@ export default function SopWorkspace() {
             <button aria-label="关闭提示" onClick={() => setNotice("")}>
               <X size={15} />
             </button>
+          </div>
+        ) : null}
+        {connectionIssue ? (
+          <div className="sop-alert sop-alert-error" role="status">
+            {reconnecting ? (
+              <LoaderCircle size={17} className="sop-spin" />
+            ) : (
+              <AlertCircle size={17} />
+            )}
+            <p>{connectionIssue}</p>
+            {activeId ? (
+              <button
+                disabled={reconnecting}
+                onClick={() => stream.reconnect(activeId)}
+              >
+                重新连接任务
+              </button>
+            ) : null}
           </div>
         ) : null}
         <div className={`sop-content ${task ? "has-task" : ""}`}>
@@ -1116,7 +1088,11 @@ export default function SopWorkspace() {
                       <div className="sop-confirm-actions">
                         <button
                           className="sop-button"
-                          disabled={pending !== null || !feedback.trim()}
+                          disabled={
+                            pending !== null ||
+                            !!connectionIssue ||
+                            !feedback.trim()
+                          }
                           onClick={() => {
                             void mutateTask("feedback");
                           }}
@@ -1132,6 +1108,7 @@ export default function SopWorkspace() {
                           className="sop-button sop-button-primary"
                           disabled={
                             pending !== null ||
+                            !!connectionIssue ||
                             !task.planHash ||
                             feedback.trim().length > 0 ||
                             questions.length > 0

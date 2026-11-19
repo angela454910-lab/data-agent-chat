@@ -316,6 +316,23 @@ SOP_AGENT_ACTOR_ID=local-demo-user
 
 先启动 SopAgent 服务（启动方式见该仓库 `docs/personal-agent.md`），再启动本项目的后端与前端。点击“准备演示数据”、下载示例 CSV 并上传，提出“按附件完成华东经销商渠道商品上下架”。等待 Planner 创建角色并分析后，检查变更单，修改或确认方案。执行结束后，从 SOP 列表选择已保存流程，上传新的清单再次运行。文件支持 CSV/XLSX，最多 5 MB / 200 行；XLSX 首版读取首个工作表。
 
+页面通过本应用的 `/api/sop` 代理调用 SopAgent。正常交互使用 SSE 更新进度卡片，无需轮询任务详情，也不要求模型逐字输出：
+
+| 页面场景 | 前端调用本应用 | 本应用调用 SopAgent（`/v1/personal-agent` 前缀） |
+| --- | --- | --- |
+| 提交新需求 | `POST /api/sop/tasks` | `POST /tasks`；将 `attachmentId` 转成 `context.attachmentId` |
+| 补充要求 | `POST /api/sop/tasks/{id}/feedback` | `POST /tasks/{id}/feedback` |
+| 确认执行 | `POST /api/sop/tasks/{id}/confirm` | `POST /tasks/{id}/confirm` |
+| 刷新、打开历史任务、断线恢复 | `GET /api/sop/tasks/{id}/events` | `GET /tasks/{id}/events` |
+
+三个 POST 带 `Accept: text/event-stream`，前端直接消费该请求的响应流，不再紧接着发起查询。代理逐块转发；每个 `data` 都是完整任务，首条为 `task.snapshot`，后续为 `task.updated`，以 `revision` 避免旧状态覆盖。收到 `task.waiting_confirmation`、`task.succeeded` 或 `task.failed` 后更新卡片并结束本轮订阅。补充或确认后，再消费对应 POST 的新一轮流。
+
+恢复接口先返回最新完整快照，再推送后续更新；已停在待确认或结果状态的任务，返回快照和对应停点事件后关闭。`GET /api/sop/tasks/{id}` 保留为单次 JSON 查询。切换任务或关闭页面只断开订阅；断流后按已知任务 ID 重连 GET events，不自动重发 POST。若创建任务尚未取得 ID 就断开，页面提示结果不确定并刷新任务列表，需先核对再重新提交。
+
+以上接口由 SopAgent 提供编排能力。本应用还向 SopAgent 提供 `GET /internal/sop/capabilities`、`POST /internal/sop/model` 和 `POST /internal/sop/tools/{name}`，分别负责工具目录、模型调用和业务操作；这些网关接口仍返回普通 JSON。
+
+SSE 解析、订阅切换和断线恢复测试：在 `web` 执行 `npm run test:sop-stream`。后端代理及业务工具测试：在项目根目录执行 `uv run python -m unittest discover -s backend/tests -p 'test_sop*.py'`。
+
 本入口是本机单用户 MVP：身份由 BFF 环境变量固定，适合在 `127.0.0.1` 演示。接入实际多用户业务系统时，需在 BFF 中用已登录身份替换 `_scope()`，并为商品工具接入真实授权。内部 `/internal/sop/*` 路由始终校验网关令牌和作用域。
 
 业务预检生成不可变变更单，执行仅接受本次已确认任务中的变更单 ID；执行前检查版本，重复请求返回原结果。关闭页面不会取消 Go 服务中的任务。服务中断后的任务恢复边界见 SopAgent 文档。

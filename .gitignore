@@ -12,3 +12,6 @@ backend/data/*.db
 backend/data/chat.db-journal
 backend/data/chat.db-wal
 backend/data/chat.db-shm
+
+# SOP demo business database journals
+backend/data/sop-demo.db-*

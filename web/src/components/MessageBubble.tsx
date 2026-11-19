@@ -44,7 +44,7 @@ function StepItem({ step }: { step: ThinkingStep }) {
   );
 }
 
-export function MessageBubble({ message, sessionStatus }: Props) {
+export function MessageBubble({ message }: Props) {
   const isUser = message.role === 'user';
  const hasSteps = !isUser && message.steps.length > 0;
 

@@ -1,4 +1,4 @@
-import { Plus, MessageSquare, Trash2, Sparkles, Loader2 } from 'lucide-react';
+import { Plus, MessageSquare, Trash2, Sparkles, Loader2, Workflow, ArrowUpRight } from 'lucide-react';
 import type { SessionSummary } from '../types';
 import clsx from 'clsx';
 
@@ -58,6 +58,17 @@ export function Sidebar({
           <Plus size={16} />
           <span>新对话</span>
         </button>
+      </div>
+
+      <div className="px-4 pb-3 flex-shrink-0">
+        <a
+          href="/sop"
+          className="flex items-center gap-2.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+        >
+          <Workflow size={16} />
+          <span className="flex-1">SOP Agent</span>
+          <ArrowUpRight size={14} className="text-slate-400" />
+        </a>
       </div>
 
       {/* Session History */}

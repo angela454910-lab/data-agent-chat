@@ -15,6 +15,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from app.sop import router as sop_router, gateway as sop_gateway
 from app.agents.supervisor import stream_supervisor
 from app.memory import extract_and_store_memories
 from app.session.store import (
@@ -52,6 +53,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Register before the SPA catch-all, which must not consume SOP API routes.
+app.include_router(sop_router)
+app.include_router(sop_gateway)
 
 # Serve built frontend if available
 if WEB_DIST_DIR.exists():

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { lazy, Suspense, useState, useEffect, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { ChatPanel } from './components/ChatPanel';
 import { InsightPanel } from './components/InsightPanel';
@@ -31,7 +31,7 @@ function updateURLSession(sessionId: string | null) {
   window.history.replaceState(null, '', url.toString());
 }
 
-function App() {
+function ChatApp() {
  const [sidebarOpen, setSidebarOpen] = useState(false);
  const [insightOpen, setInsightOpen] = useState(false);
 
@@ -271,6 +271,21 @@ const handleSwitchSession = (id: string) => {
       )}
     </div>
   );
+}
+
+const SopWorkspace = lazy(() => import('./sop/SopWorkspace'));
+
+function App() {
+  // Mount the legacy chat only on its own routes: its URL/session effects
+  // must not rewrite /sop or start chat requests in the SOP workspace.
+  if (window.location.pathname === '/sop' || window.location.pathname.startsWith('/sop/')) {
+    return (
+      <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-sm text-slate-500" role="status">正在打开 SOP Agent…</div>}>
+        <SopWorkspace />
+      </Suspense>
+    );
+  }
+  return <ChatApp />;
 }
 
 export default App;
